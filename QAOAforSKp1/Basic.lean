@@ -249,3 +249,32 @@ theorem trace_U_B_dagger_mul_U_B_rho_s_eq_one
         = Matrix.trace ((1 : DensityMatrix n) * rho_s n) := by simp [hId]
     _ = Matrix.trace (rho_s n) := by simp
     _ = 1 := trace_rho_s_eq_one n
+
+
+----------------------------------------------------------------
+-------------------------SK Cost Function-----------------------
+----------------------------------------------------------------
+
+/-- SK couplings `J_{jk}` on `(n+1)` qubits. -/
+abbrev SKCoupling (n : ℕ) := Fin (n + 1) → Fin (n + 1) → ℝ
+
+/-- Spin value (`±1`) of qubit `j` in basis state `z`. -/
+def spinAt (n : ℕ) (z : BasisIdx n) (j : Fin (n + 1)) : ℝ :=
+  if Nat.testBit z.1 j.1 then (-1 : ℝ) else (1 : ℝ)
+
+/-- Unordered edge set `{(j,k) | j < k}` used by the SK Hamiltonian. -/
+def skEdgeSet (n : ℕ) : Finset (Fin (n + 1) × Fin (n + 1)) :=
+  (Finset.univ.product Finset.univ).filter (fun jk => jk.1.1 < jk.2.1)
+
+/-- SK normalization factor `1 / √(n+1)`. -/
+noncomputable def skNormFactor (n : ℕ) : ℝ :=
+  (Real.sqrt ((n + 1 : ℕ) : ℝ))⁻¹
+
+/-- SK cost value `C_J(z)` on computational basis state `z`. -/
+noncomputable def skCostOnBasis (n : ℕ) (J : SKCoupling n) (z : BasisIdx n) : ℝ :=
+  skNormFactor n *
+    Finset.sum (skEdgeSet n) (fun jk => J jk.1 jk.2 * spinAt n z jk.1 * spinAt n z jk.2)
+
+/-- Cost unitary `U_C(γ) = exp(-i γ C_J)` for SK. -/
+noncomputable def U_C_SK (n : ℕ) (J : SKCoupling n) (γ : ℝ) : Operator n :=
+  fun ψ z => Complex.exp (((-Complex.I) * (γ : ℂ)) * (skCostOnBasis n J z : ℂ)) * ψ z
