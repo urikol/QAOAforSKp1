@@ -91,6 +91,13 @@ abbrev BasisIdx (n : ℕ) := Fin (2 ^ (n + 1))
 /-- State space for `(n+1)` qubits in computational basis indexing. -/
 abbrev State (n : ℕ) := BasisIdx n → ℂ
 
+/-- Density matrices on `(n+1)` qubits in the computational basis. -/
+abbrev DensityMatrix (n : ℕ) := Matrix (BasisIdx n) (BasisIdx n) ℂ
+
+/-- Pure-state density matrix `|ψ⟩⟨ψ|`. -/
+noncomputable def pureDensity (n : ℕ) (ψ : State n) : DensityMatrix n :=
+  fun x y => ψ x * star (ψ y)
+
 
 /--
 Split an index of `2^(n+1)` basis states into:
@@ -115,6 +122,9 @@ noncomputable def s : (n : ℕ) → State n
       let p := splitQubitIndex (n := n + 1) i
       ketPlus p.1 * s n p.2
 
+/-- Density matrix of the initial state `|s⟩`: `ρ_s = |s⟩⟨s|`. -/
+noncomputable def rho_s (n : ℕ) : DensityMatrix n :=
+  pureDensity n (s n)
 
 /-- The initial state is normalized: `⟨s|s⟩ = 1`. -/
 theorem bra_s_s (n : ℕ) : bra (s n) (s n) = 1 := by
@@ -155,112 +165,65 @@ theorem bra_s_s (n : ℕ) : bra (s n) (s n) = 1 := by
     _ = 1 := by
           simp
 
+/-- The initial state's density matrix has unit trace. -/
+theorem trace_rho_s_eq_one (n : ℕ) : Matrix.trace (rho_s n) = 1 := by
+  unfold rho_s pureDensity
+  calc
+    Matrix.trace (fun x y => s n x * star (s n y) : DensityMatrix n)
+        = ∑ i : BasisIdx n, s n i * star (s n i) := by
+            simp [Matrix.trace]
+    _ = ∑ i : BasisIdx n, star (s n i) * s n i := by
+          refine Finset.sum_congr rfl ?_
+          intro i hi
+          ring
+    _ = bra (s n) (s n) := by
+          rfl
+    _ = 1 := bra_s_s n
+
 
 
 ----------------------------------------------------------------
 --------------------------The Mixer Operator--------------------
 ----------------------------------------------------------------
-
 /-- Linear operators acting on `State n`. -/
 abbrev Operator (n : ℕ) := State n → State n
 
-
 /-- Hamming distance between computational-basis indices (`(n+1)`-bit strings). -/
-def basisHammingDist (n : ℕ) (x y : Fin (2 ^ (n + 1))) : ℕ :=
+def basisHammingDist (n : ℕ) (x y : BasisIdx n) : ℕ :=
   ((Finset.range (n + 1)).filter (fun j => Nat.testBit x.1 j ≠ Nat.testBit y.1 j)).card
 
+/-- Basic bound: a Hamming distance on `(n+1)` bits is at most `n+1`. -/
+lemma basisHammingDist_le (n : ℕ) (x y : BasisIdx n) :
+    basisHammingDist n x y ≤ n + 1 := by
+  let p : ℕ → Prop := fun j => Nat.testBit x.1 j ≠ Nat.testBit y.1 j
+  unfold basisHammingDist
+  calc
+    ((Finset.range (n + 1)).filter p).card ≤ (Finset.range (n + 1)).card := by
+      exact Finset.card_le_card (Finset.filter_subset (s := Finset.range (n + 1)) (p := p))
+    _ = n + 1 := by simp
+
 /-- Computational-basis matrix element of `U_B(β) = exp(-i β ∑_j X_j)`. -/
-noncomputable def mixerEntry (n : ℕ) (β : ℝ) (x y : Fin (2 ^ (n + 1))) : ℂ :=
+noncomputable def mixerEntry (n : ℕ) (β : ℝ) (x y : BasisIdx n) : ℂ :=
   let d := basisHammingDist n x y
   (Real.cos β : ℂ) ^ ((n + 1) - d) * ((-Complex.I) * (Real.sin β : ℂ)) ^ d
 
 /-- Explicit mixer unitary action in the computational basis. -/
 noncomputable def U_B (n : ℕ) (β : ℝ) : Operator n :=
-  fun ψ x => ∑ y : Fin (2 ^ (n + 1)), mixerEntry n β x y * ψ y
+  fun ψ x => ∑ y : BasisIdx n, mixerEntry n β x y * ψ y
 
 
 
 ----------------------------------------------------------------
--------------------------SK Cost Function-----------------------
+--------------------The Dagger Mixer Operator-------------------
 ----------------------------------------------------------------
 
-/-- SK couplings `J_{jk}` on `(n+1)` qubits. -/
-abbrev SKCoupling (n : ℕ) := Fin (n + 1) → Fin (n + 1) → ℝ
-
-/-- Spin value (`±1`) of qubit `j` in basis state `z`. -/
-def spinAt (n : ℕ) (z : BasisIdx n) (j : Fin (n + 1)) : ℝ :=
-  if Nat.testBit z.1 j.1 then (-1 : ℝ) else (1 : ℝ)
-
-/-- Unordered edge set `{(j,k) | j < k}` used by the SK Hamiltonian. -/
-def skEdgeSet (n : ℕ) : Finset (Fin (n + 1) × Fin (n + 1)) :=
-  (Finset.univ.product Finset.univ).filter (fun jk => jk.1.1 < jk.2.1)
-
-/-- SK normalization factor `1 / √(n+1)`. -/
-noncomputable def skNormFactor (n : ℕ) : ℝ :=
-  (Real.sqrt ((n + 1 : ℕ) : ℝ))⁻¹
-
-/-- SK cost value `C_J(z)` on computational basis state `z`. -/
-noncomputable def skCostOnBasis (n : ℕ) (J : SKCoupling n) (z : BasisIdx n) : ℝ :=
-  skNormFactor n *
-    Finset.sum (skEdgeSet n) (fun jk => J jk.1 jk.2 * spinAt n z jk.1 * spinAt n z jk.2)
-
-/-- Cost Hamiltonian `C_J`, diagonal in the computational basis. -/
-noncomputable def C_SK (n : ℕ) (J : SKCoupling n) : Operator n :=
-  fun ψ z => (skCostOnBasis n J z : ℂ) * ψ z
-
-/-- Cost unitary `U_C(γ) = exp(-i γ C_J)` for SK. -/
-noncomputable def U_C_SK (n : ℕ) (J : SKCoupling n) (γ : ℝ) : Operator n :=
-  fun ψ z => Complex.exp (((-Complex.I) * (γ : ℂ)) * (skCostOnBasis n J z : ℂ)) * ψ z
-
-
-
-
-----------------------------------------------------------------
------------QAOA at level p=1 state for the SK model-------------
-----------------------------------------------------------------
-
-/-- QAOA depth-1 state: `|γ,β⟩ = U_B(β) U_C(γ) |s⟩`. -/
-noncomputable def qaoaP1_SK (n : ℕ) (J : SKCoupling n) (γ β : ℝ) : State n :=
-  U_B n β (U_C_SK n J γ (s n))
-
-/-- Bra associated with the SK `p=1` QAOA ket `|γ,β⟩`. -/
-noncomputable def braQaoaP1_SK (n : ℕ) (J : SKCoupling n) (γ β : ℝ) : State n → ℂ :=
-  bra (n := 2 ^ (n + 1)) (qaoaP1_SK n J γ β)
+/-- Computational basis ket `|y⟩` as a state function. -/
+def basisKet (n : ℕ) (y : BasisIdx n) : State n :=
+  fun x => if x = y then 1 else 0
 
 /--
-`U_C_SK` preserves the bra-ket norm for any input state.
+Adjoint (dagger) of an operator in the computational basis.
+Defined by conjugate-transposing its matrix elements.
 -/
-theorem bra_U_C_SK_self
-    (n : ℕ) (J : SKCoupling n) (γ : ℝ) (ψ : State n) :
-    bra (U_C_SK n J γ ψ) (U_C_SK n J γ ψ) = bra ψ ψ := by
-  unfold bra U_C_SK
-  refine Finset.sum_congr rfl ?_
-  intro z hz
-  let θ : ℂ := ((-Complex.I) * (γ : ℂ)) * (skCostOnBasis n J z : ℂ)
-  have hθ : star θ + θ = 0 := by
-    simp [θ, mul_comm, mul_left_comm]
-  have hphase : star (Complex.exp θ) * Complex.exp θ = (1 : ℂ) := by
-    calc
-      star (Complex.exp θ) * Complex.exp θ
-          = Complex.exp (star θ) * Complex.exp θ := by simp
-      _ = Complex.exp (star θ + θ) := by rw [← Complex.exp_add]
-      _ = 1 := by rw [hθ]; simp
-  have hmul :
-      star (Complex.exp θ * ψ z) * (Complex.exp θ * ψ z)
-        = (star (Complex.exp θ) * Complex.exp θ) * (star (ψ z) * ψ z) := by
-    simp [mul_assoc, mul_comm, mul_left_comm]
-  calc
-    star (Complex.exp θ * ψ z) * (Complex.exp θ * ψ z)
-        = (star (Complex.exp θ) * Complex.exp θ) * (star (ψ z) * ψ z) := hmul
-    _ = (1 : ℂ) * (star (ψ z) * ψ z) := by rw [hphase]
-    _ = star (ψ z) * ψ z := by ring
-
-/-- Normalization of the SK state after applying the cost unitary: `⟨U_C s|U_C s⟩ = 1`. -/
-theorem bra_postCost_SK_postCost_SK
-    (n : ℕ) (J : SKCoupling n) (γ : ℝ) :
-    bra (U_C_SK n J γ (s n)) (U_C_SK n J γ (s n)) = 1 := by
-  calc
-    bra (U_C_SK n J γ (s n)) (U_C_SK n J γ (s n))
-        = bra (s n) (s n) := by
-          simpa using bra_U_C_SK_self n J γ (s n)
-    _ = 1 := bra_s_s n
+noncomputable def dagger (n : ℕ) (U : Operator n) : Operator n :=
+  fun ψ x => ∑ y : BasisIdx n, star (U (basisKet n y) x) * ψ y
