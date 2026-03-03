@@ -1,0 +1,95 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="2685.4">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px 'Helvetica Light'}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px 'Helvetica Light'; min-height: 14.0px}
+  </style>
+</head>
+<body>
+<p class="p1">Assumption hker in the theorem trace_U_B_dagger_mul_U_B_rho_s_eq_one</p>
+<p class="p2"><br></p>
+<p class="p1">Code assumption (Lean):</p>
+<p class="p2"><br></p>
+<p class="p1">hker :</p>
+<p class="p1"><span class="Apple-converted-space">  </span>∀ x y : BasisIdx n,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>(∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y)</p>
+<p class="p1"><span class="Apple-converted-space">      </span>= if x = y then 1 else 0</p>
+<p class="p2"><br></p>
+<p class="p1">What each symbol means</p>
+<p class="p2"><br></p>
+<p class="p1">1) BasisIdx n</p>
+<p class="p1">- This is the computational-basis index type for (n+1)-qubit basis states.</p>
+<p class="p1">- Its size is 2^(n+1).</p>
+<p class="p2"><br></p>
+<p class="p1">2) mixerEntry n β x y</p>
+<p class="p1">- This is the kernel (matrix element) K_{xy} of the mixer operator U_B.</p>
+<p class="p1">- In matrix language, K is the matrix of U_B in the computational basis.</p>
+<p class="p2"><br></p>
+<p class="p1">3) star (mixerEntry ...)</p>
+<p class="p1">- In this context, star is complex conjugation.</p>
+<p class="p1">- So star (K_{zx}) means overline(K_{zx}).</p>
+<p class="p2"><br></p>
+<p class="p1">Formula version of hker</p>
+<p class="p2"><br></p>
+<p class="p1">If we write K_{xy} := mixerEntry n β x y, then hker says:</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>Σ_z overline(K_{z x}) K_{z y} = δ_{x y}</p>
+<p class="p2"><br></p>
+<p class="p1">where δ_{x y} is the Kronecker delta:</p>
+<p class="p1">- δ_{x y} = 1 if x = y</p>
+<p class="p1">- δ_{x y} = 0 if x ≠ y</p>
+<p class="p2"><br></p>
+<p class="p1">Linear algebra meaning</p>
+<p class="p2"><br></p>
+<p class="p1">- The quantity Σ_z overline(K_{z x}) K_{z y} is the inner product between column x and column y of K.</p>
+<p class="p1">- Therefore hker states that the columns of K are orthonormal.</p>
+<p class="p1">- Equivalently: K†K = I.</p>
+<p class="p1">- This is exactly the (left) unitarity condition for the mixer kernel.</p>
+<p class="p2"><br></p>
+<p class="p1">How it is used in the trace theorem</p>
+<p class="p2"><br></p>
+<p class="p1">The theorem proved in code is:</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>trace_U_B_dagger_mul_U_B_rho_s_eq_one</p>
+<p class="p2"><br></p>
+<p class="p1">and concludes:</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>Tr((U_B†U_B) ρ_s) = 1</p>
+<p class="p2"><br></p>
+<p class="p1">under hker.</p>
+<p class="p2"><br></p>
+<p class="p1">The proof steps are:</p>
+<p class="p2"><br></p>
+<p class="p1">1) Define the matrix of U_B†U_B by entries:</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">   </span>M_{xy} = Σ_z overline(K_{z x}) K_{z y}</p>
+<p class="p2"><br></p>
+<p class="p1">2) By hker, M_{xy} = δ_{xy}, so M = I.</p>
+<p class="p2"><br></p>
+<p class="p1">3) Therefore:</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">   </span>Tr((U_B†U_B) ρ_s)</p>
+<p class="p1"><span class="Apple-converted-space">   </span>= Tr(M ρ_s)</p>
+<p class="p1"><span class="Apple-converted-space">   </span>= Tr(I ρ_s)</p>
+<p class="p1"><span class="Apple-converted-space">   </span>= Tr(ρ_s)</p>
+<p class="p2"><br></p>
+<p class="p1">4) From the previously proved normalization of |s&gt;, the density matrix ρ_s = |s&gt;&lt;s| has trace 1:</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">   </span>Tr(ρ_s) = 1.</p>
+<p class="p2"><br></p>
+<p class="p1">Hence:</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">   </span>Tr((U_B†U_B) ρ_s) = 1.</p>
+<p class="p2"><br></p>
+<p class="p1">Important clarification</p>
+<p class="p2"><br></p>
+<p class="p1">- hker is an assumption about the mixer kernel (i.e., about U_B), not about |s&gt; itself.</p>
+<p class="p1">- |s&gt; contributes through ρ_s and its normalization Tr(ρ_s)=1.</p>
+</body>
+</html>
