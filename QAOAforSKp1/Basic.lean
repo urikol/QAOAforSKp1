@@ -275,6 +275,68 @@ noncomputable def skCostOnBasis (n : ℕ) (J : SKCoupling n) (z : BasisIdx n) : 
   skNormFactor n *
     Finset.sum (skEdgeSet n) (fun jk => J jk.1 jk.2 * spinAt n z jk.1 * spinAt n z jk.2)
 
-/-- Cost unitary `U_C(γ) = exp(-i γ C_J)` for SK. -/
-noncomputable def U_C_SK (n : ℕ) (J : SKCoupling n) (γ : ℝ) : Operator n :=
-  fun ψ z => Complex.exp (((-Complex.I) * (γ : ℂ)) * (skCostOnBasis n J z : ℂ)) * ψ z
+/-- Phase factor of the SK cost unitary `U_C(γ)` on basis state `|z⟩`. -/
+noncomputable def U_C_phase (n : ℕ) (J : SKCoupling n) (γ : ℝ) (z : BasisIdx n) : ℂ :=
+  Complex.exp (((-Complex.I) * (γ : ℂ)) * (skCostOnBasis n J z : ℂ))
+
+/-- Phase factor of the adjoint cost unitary `U_C(γ)†` on basis state `|z⟩`. -/
+noncomputable def U_C_dagger_phase (n : ℕ) (J : SKCoupling n) (γ : ℝ) (z : BasisIdx n) : ℂ :=
+  Complex.exp (((Complex.I) * (γ : ℂ)) * (skCostOnBasis n J z : ℂ))
+
+
+----------------------------------------------------------------
+-----------QAOA at level p=1 state for the SK model-------------
+----------------------------------------------------------------
+
+
+/-- Pointwise phase cancellation: `U_C(γ)†(z) * U_C(γ)(z) = 1`. -/
+lemma U_C_dagger_phase_mul_U_C_phase_eq_one
+    (n : ℕ) (J : SKCoupling n) (γ : ℝ) (z : BasisIdx n) :
+    U_C_dagger_phase n J γ z * U_C_phase n J γ z = 1 := by
+  let a : ℂ := ((γ : ℂ) * (skCostOnBasis n J z : ℂ))
+  have hsum : Complex.I * a + (-Complex.I) * a = 0 := by ring
+  calc
+    U_C_dagger_phase n J γ z * U_C_phase n J γ z
+        = Complex.exp (Complex.I * a) * Complex.exp ((-Complex.I) * a) := by
+            simp [U_C_dagger_phase, U_C_phase, a, mul_left_comm, mul_comm]
+    _ = Complex.exp ((Complex.I * a) + ((-Complex.I) * a)) := by
+          simpa [Complex.exp_add] using (Complex.exp_add (Complex.I * a) ((-Complex.I) * a)).symm
+    _ = Complex.exp 0 := by simp
+    _ = 1 := by simp
+
+/--
+Matrix entries of `U_C† U_B† U_B U_C` in computational basis.
+`U_C` contributes only diagonal phase factors on the two outer sides.
+-/
+noncomputable def U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix
+    (n : ℕ) (J : SKCoupling n) (β γ : ℝ) : DensityMatrix n :=
+  fun x y =>
+    U_C_dagger_phase n J γ x *
+      U_B_dagger_mul_U_B_matrix n β x y *
+      U_C_phase n J γ y
+
+/--
+Assumption-based statement:
+`Tr((U_C† U_B† U_B U_C) ρ_s) = 1` if the mixer kernel is orthonormal.
+-/
+theorem trace_U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_rho_s_eq_one
+    (n : ℕ) (J : SKCoupling n) (β γ : ℝ)
+    (hker : MixerKernelOrthonormal n β) :
+    Matrix.trace
+      (U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ * rho_s n) = 1 := by
+  have hIdB : U_B_dagger_mul_U_B_matrix n β = (1 : DensityMatrix n) := by
+    ext x y
+    simpa [U_B_dagger_mul_U_B_matrix, Matrix.one_apply] using hker x y
+  have hIdAll :
+      U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ = (1 : DensityMatrix n) := by
+    ext x y
+    by_cases hxy : x = y
+    · subst hxy
+      simp [U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix, hIdB,
+        U_C_dagger_phase_mul_U_C_phase_eq_one]
+    · simp [U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix, hIdB, hxy]
+  calc
+    Matrix.trace (U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ * rho_s n)
+        = Matrix.trace ((1 : DensityMatrix n) * rho_s n) := by simp [hIdAll]
+    _ = Matrix.trace (rho_s n) := by simp
+    _ = 1 := trace_rho_s_eq_one n
