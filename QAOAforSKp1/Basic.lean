@@ -206,14 +206,16 @@ lemma basisHammingDist_le (n : ℕ) (x y : BasisIdx n) :
       exact Finset.card_le_card (Finset.filter_subset (s := Finset.range (n + 1)) (p := p))
     _ = n + 1 := by simp
 
-/-- Computational-basis matrix element of `U_B(β) = exp(-i β ∑_j X_j)`. -/
-noncomputable def mixerEntry (n : ℕ) (β : ℝ) (x y : BasisIdx n) : ℂ :=
+/-- Computational-basis matrix element of `U_B(β) = exp(-i β ∑_j X_j)`:
+⟨x|U_B(β)|y⟩ = cos(β)^(n+1-d) * (-i sin(β))^d where d is the Hamming distance between x and y.
+-/
+noncomputable def mixerKernel (n : ℕ) (β : ℝ) (x y : BasisIdx n) : ℂ :=
   let d := basisHammingDist n x y
   (Real.cos β : ℂ) ^ ((n + 1) - d) * ((-Complex.I) * (Real.sin β : ℂ)) ^ d
 
 /-- Explicit mixer unitary action in the computational basis. -/
 noncomputable def U_B (n : ℕ) (β : ℝ) : Operator n :=
-  fun ψ x => ∑ y : BasisIdx n, mixerEntry n β x y * ψ y
+  fun ψ x => ∑ y : BasisIdx n, mixerKernel n β x y * ψ y
 
 
 /-- Dagger mixer operator, defined as the adjoint of `U_B`. -/
@@ -226,7 +228,7 @@ Orthonormality of the mixer kernel:
 -/
 theorem MixerKernelOrthonormal (n : ℕ) (β : ℝ) :
     ∀ x y : BasisIdx n,
-      (∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y)
+      (∑ z : BasisIdx n, star (mixerKernel n β z x) * mixerKernel n β z y)
         = if x = y then 1 else 0 := by
   sorry
 
@@ -238,11 +240,11 @@ theorem trace_U_B_dagger_mul_U_B_rho_s_eq_one
     (n : ℕ) (β : ℝ) :
     Matrix.trace
       ((let UBUB : DensityMatrix n :=
-          fun x y => ∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y
+          fun x y => ∑ z : BasisIdx n, star (mixerKernel n β z x) * mixerKernel n β z y
         UBUB) * rho_s n)
       = 1 := by
   let UBUB : DensityMatrix n :=
-    fun x y => ∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y
+    fun x y => ∑ z : BasisIdx n, star (mixerKernel n β z x) * mixerKernel n β z y
   have hId :
       UBUB = (1 : DensityMatrix n) := by
     ext x y
@@ -250,7 +252,7 @@ theorem trace_U_B_dagger_mul_U_B_rho_s_eq_one
   calc
     Matrix.trace
         ((let UBUB : DensityMatrix n :=
-            fun x y => ∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y
+            fun x y => ∑ z : BasisIdx n, star (mixerKernel n β z x) * mixerKernel n β z y
           UBUB) * rho_s n)
         = Matrix.trace (UBUB * rho_s n) := by simp [UBUB]
     _ = Matrix.trace ((1 : DensityMatrix n) * rho_s n) := by simp [hId]
@@ -319,7 +321,7 @@ noncomputable def U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix
     (n : ℕ) (J : SKCoupling n) (β γ : ℝ) : DensityMatrix n :=
   fun x y =>
     U_C_dagger_phase n J γ x *
-      (∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y) *
+      (∑ z : BasisIdx n, star (mixerKernel n β z x) * mixerKernel n β z y) *
       U_C_phase n J γ y
 
 /--
@@ -335,7 +337,7 @@ theorem trace_U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_rho_s_eq_one
     calc
       U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ x y
           = (U_C_dagger_phase n J γ x *
-              (∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y)) *
+              (∑ z : BasisIdx n, star (mixerKernel n β z x) * mixerKernel n β z y)) *
               U_C_phase n J γ y := by
                 simp [U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix]
       _ = (U_C_dagger_phase n J γ x * (if x = y then 1 else 0)) * U_C_phase n J γ y := by
@@ -353,3 +355,40 @@ theorem trace_U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_rho_s_eq_one
         = Matrix.trace ((1 : DensityMatrix n) * rho_s n) := by simp [hIdAll]
     _ = Matrix.trace (rho_s n) := by simp
     _ = 1 := trace_rho_s_eq_one n
+
+
+----------------------------------------------------------------
+--------Expectation of the SK cost operator - Definition--------
+----------------------------------------------------------------
+
+/--
+Matrix entries of `U_C† U_B† (C/(n+1)) U_B U_C` in the computational basis.
+-/
+noncomputable def QAOACostMatrix
+    (n : ℕ) (J : SKCoupling n) (β γ : ℝ) : DensityMatrix n :=
+  fun x y =>
+    U_C_dagger_phase n J γ x *
+      (∑ z : BasisIdx n,
+        star (mixerKernel n β z x) *
+          ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ) *
+          mixerKernel n β z y) *
+      U_C_phase n J γ y
+
+/--
+For fixed SK coupling `J`, the p=1 QAOA normalized cost expectation:
+`⟨s| U_C† U_B† (C/(n+1)) U_B U_C |s⟩`
+written as a trace with `ρ_s = |s⟩⟨s|`.
+-/
+noncomputable def QAOACostVEV
+    (n : ℕ) (J : SKCoupling n) (β γ : ℝ) : ℂ :=
+  Matrix.trace
+    (QAOACostMatrix n J β γ * rho_s n)
+
+/--
+Ensemble expectation over SK couplings:
+`E_J(⟨s| U_C† U_B† (C/(n+1)) U_B U_C |s⟩)`.
+`μ` is the probability measure for `J`.
+-/
+noncomputable def expectedQAOACostVEV
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ : ℝ) : ℂ :=
+  ∫ J, QAOACostVEV n J β γ ∂μ

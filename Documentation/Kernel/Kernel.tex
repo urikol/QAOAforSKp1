@@ -1,0 +1,132 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm,mathtools}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+\title{Detailed Note: Mixer Operator $U_B$ in the Computational Basis}
+\author{}
+\date{}
+
+\begin{document}
+	\maketitle
+	
+	\section*{1. Setup and Notation}
+	For $n+1$ qubits, let computational-basis states be labeled by bit strings
+	\[
+	x,y \in \{0,1\}^{n+1}.
+	\]
+	Equivalently, in code these are indices in
+	\[
+	\mathrm{BasisIdx}(n) \cong \{0,1,\dots,2^{n+1}-1\}.
+	\]
+	
+	A state is a function
+	\[
+	\psi : \{0,1\}^{n+1} \to \mathbb{C},
+	\]
+	with amplitude $\psi(y)$ on basis state $|y\rangle$.
+	
+	The depth-1 QAOA mixer generator is
+	\[
+	B = \sum_{j=1}^{n+1} X_j,
+	\]
+	so the mixer unitary is
+	\[
+	U_B(\beta) = e^{-i\beta B}.
+	\]
+	
+	\section*{2. Kernel Representation}
+	In the computational basis, $U_B(\beta)$ acts by a kernel (matrix element)
+	\[
+	K_\beta(x,y) := \langle x|U_B(\beta)|y\rangle.
+	\]
+	Hence for every output index $x$,
+	\begin{equation}
+	(U_B(\beta)\psi)(x) = \sum_{y} K_\beta(x,y)\,\psi(y).
+	\label{eq:kernel-action}
+	\end{equation}
+	This is exactly the matrix-vector product in basis coordinates.
+	
+	\section*{3. Closed Form of the Kernel}
+	Let $d(x,y)$ be the Hamming distance (number of bit positions where $x$ and $y$ differ). Then
+	\begin{equation}
+	K_\beta(x,y)
+	= (\cos\beta)^{(n+1-d(x,y))}\,\bigl((-i)\sin\beta\bigr)^{d(x,y)}.
+	\label{eq:kernel-closed-form}
+	\end{equation}
+	
+	Interpretation:
+	\begin{itemize}
+		\item each equal bit contributes a factor $\cos\beta$,
+		\item each flipped bit contributes a factor $(-i)\sin\beta$,
+		\item only the number of differing bits matters, not their locations.
+	\end{itemize}
+	So $K_\beta$ depends on $(x,y)$ only through $d(x,y)$.
+	
+	\section*{4. Why This Is the Right Formula}
+	Using commutativity of different-qubit Pauli operators,
+	\[
+	U_B(\beta) = \prod_{j=1}^{n+1} e^{-i\beta X_j}.
+	\]
+	For one qubit,
+	\[
+	e^{-i\beta X} = \cos\beta\,I - i\sin\beta\,X.
+	\]
+	In basis terms:
+	\begin{itemize}
+		\item no flip ($I$ channel): factor $\cos\beta$,
+		\item flip ($X$ channel): factor $-i\sin\beta$.
+	\end{itemize}
+	Across $n+1$ qubits, to go from $|y\rangle$ to $|x\rangle$, exactly $d(x,y)$ flips are needed, giving \eqref{eq:kernel-closed-form}.
+	
+	\section*{5. Worked Example: Single Qubit ($n=0$)}
+	Now $x,y\in\{0,1\}$ and
+	\[
+	K_\beta(x,y)=
+	\begin{cases}
+	\cos\beta, & x=y,\\
+	-i\sin\beta, & x\neq y.
+	\end{cases}
+	\]
+	So
+	\[
+	U_B(\beta)=
+	\begin{pmatrix}
+	\cos\beta & -i\sin\beta\\
+	-i\sin\beta & \cos\beta
+	\end{pmatrix}
+	\]
+	in the basis $(|0\rangle,|1\rangle)$.
+	
+	If $|s\rangle=|+\rangle=(|0\rangle+|1\rangle)/\sqrt2$, then
+	\[
+	U_B(\beta)|+\rangle
+	= (\cos\beta - i\sin\beta)|+\rangle
+	= e^{-i\beta}|+\rangle.
+	\]
+	So $|+\rangle$ is an eigenstate of the single-qubit mixer.
+	
+	\section*{6. Worked Example: Two Qubits ($n=1$)}
+	Now $x,y\in\{00,01,10,11\}$ and
+	\[
+	K_\beta(x,y)=(\cos\beta)^{2-d(x,y)}((-i)\sin\beta)^{d(x,y)}.
+	\]
+	Hence:
+	\begin{itemize}
+		\item $d=0$: coefficient $(\cos\beta)^2$,
+		\item $d=1$: coefficient $\cos\beta\,(-i\sin\beta)$,
+		\item $d=2$: coefficient $(-i\sin\beta)^2$.
+	\end{itemize}
+	For fixed $x$, amplitudes are mixed from all four $y$ values according to these three distance classes.
+	
+	\section*{7. Connection to Your Lean Definitions}
+	Your code encodes exactly this structure:
+	\begin{itemize}
+		\item \texttt{basisHammingDist n x y} = $d(x,y)$,
+		\item \texttt{mixerEntry n beta x y} = $K_\beta(x,y)$ from \eqref{eq:kernel-closed-form},
+		\item \texttt{U\_B n beta} applies \eqref{eq:kernel-action} by summing over $y$.
+	\end{itemize}
+	So yes: \textbf{$K_\beta$ is the mixer kernel}, i.e. the computational-basis matrix of $U_B(\beta)$.
+	
+\end{document}
