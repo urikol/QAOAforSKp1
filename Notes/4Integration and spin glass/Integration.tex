@@ -1,0 +1,193 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{physics}
+\usepackage{hyperref}
+
+\newcommand{\E}{\mathbb{E}}
+\DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator{\Var}{Var}
+
+\title{Gaussian $J$-Integral in p=1 QAOA for SK and the Spin-Glass Overlap Order Parameter}
+\author{}
+\date{}
+
+\begin{document}
+	\maketitle
+	
+	\section*{1. Setup and notation}
+	We consider the SK cost (your code normalization):
+	\begin{equation}
+		C_J(z)
+		=
+		\frac{1}{\sqrt{N}}
+		\sum_{j<k} J_{jk}\,\sigma_j(z)\sigma_k(z),
+		\qquad N:=n+1,
+		\label{eq:CJ}
+	\end{equation}
+	where $\sigma_j(z)\in\{\pm 1\}$ is the spin associated with bitstring/basis state $z$.
+	The couplings are i.i.d.
+	\begin{equation}
+		J_{jk}\sim\mathcal N(0,1),\qquad j<k,
+		\label{eq:J-gaussian}
+	\end{equation}
+	and independent across edges.
+	
+	After previous algebraic steps, one integral appearing term-by-term in the $x,y,z$ sum is
+	\begin{equation}
+		I_{xyz}
+		:=
+		\int U_C^\dagger(x;J)\,\frac{C_J(z)}{N}\,U_C(y;J)\,d\mu(J),
+		\label{eq:Ixyz-def}
+	\end{equation}
+	with
+	\begin{equation}
+		U_C(y;J)=e^{-i\gamma C_J(y)},\qquad
+		U_C^\dagger(x;J)=e^{+i\gamma C_J(x)}.
+	\end{equation}
+	Hence
+	\begin{equation}
+		I_{xyz}
+		=
+		\frac{1}{N}\,\E\!\left[C_z\,e^{i\gamma(C_x-C_y)}\right],
+		\label{eq:Ixyz-mgf-form}
+	\end{equation}
+	where for brevity $C_u:=C_J(u)$.
+	
+	\section*{2. Gaussian evaluation identity}
+	Define
+	\begin{equation}
+		X:=C_z,\qquad Y:=C_x-C_y.
+	\end{equation}
+	Since all $C_u$ are linear forms in Gaussian $J$, the vector $(X,Y)$ is jointly Gaussian and centered.
+	A standard joint-Gaussian identity gives
+	\begin{equation}
+		\E\!\left[X e^{itY}\right]
+		=
+		(it)\,\Cov(X,Y)\,\exp\!\left(-\frac{t^2}{2}\Var(Y)\right).
+		\label{eq:gaussian-identity}
+	\end{equation}
+	Applying $t=\gamma$ yields
+	\begin{equation}
+		I_{xyz}
+		=
+		\frac{i\gamma}{N}\,\Cov(C_z, C_x-C_y)
+		\exp\!\left(-\frac{\gamma^2}{2}\Var(C_x-C_y)\right).
+		\label{eq:Ixyz-cov-var}
+	\end{equation}
+	This is already the closed $J$-integral in covariance/variance form.
+	
+	\section*{3. Compute covariances from SK normalization}
+	Let
+	\begin{equation}
+		a_{jk}(u):=\sigma_j(u)\sigma_k(u),\qquad
+		C_u=\frac{1}{\sqrt N}\sum_{j<k}J_{jk}a_{jk}(u).
+	\end{equation}
+	Using independence and $\E[J_{jk}J_{\ell m}]=\delta_{(jk),(\ell m)}$,
+	\begin{equation}
+		\Cov(C_u,C_v)
+		=
+		\frac{1}{N}\sum_{j<k} a_{jk}(u)a_{jk}(v).
+		\label{eq:cov-edge-sum}
+	\end{equation}
+	Introduce the overlap
+	\begin{equation}
+		q_{uv}:=\frac{1}{N}\sum_{j=1}^{N}\sigma_j(u)\sigma_j(v)\in[-1,1].
+		\label{eq:q-def}
+	\end{equation}
+	Using
+	\begin{equation}
+		\sum_{j<k} b_j b_k = \frac12\!\left[\left(\sum_j b_j\right)^2-\sum_j b_j^2\right],
+		\quad b_j:=\sigma_j(u)\sigma_j(v),\quad b_j^2=1,
+	\end{equation}
+	we get
+	\begin{equation}
+		\Cov(C_u,C_v)
+		=
+		\frac{N q_{uv}^2-1}{2}.
+		\label{eq:cov-q}
+	\end{equation}
+	Therefore
+	\begin{align}
+		\Cov(C_z, C_x-C_y)
+		&=\Cov(C_z,C_x)-\Cov(C_z,C_y)
+		\\
+		&=\frac{N}{2}\left(q_{zx}^2-q_{zy}^2\right),
+		\label{eq:cov-diff-q}
+	\end{align}
+	(the $-\tfrac12$ cancels).
+	Also
+	\begin{align}
+		\Var(C_x-C_y)
+		&=\Var(C_x)+\Var(C_y)-2\Cov(C_x,C_y)
+		\\
+		&=\frac{N-1}{2}+\frac{N-1}{2}-2\cdot\frac{N q_{xy}^2-1}{2}
+		\\
+		&=N\left(1-q_{xy}^2\right).
+		\label{eq:var-diff-q}
+	\end{align}
+	Plugging \eqref{eq:cov-diff-q} and \eqref{eq:var-diff-q} into \eqref{eq:Ixyz-cov-var}:
+	\begin{equation}
+		\boxed{
+			I_{xyz}
+			=
+			\frac{i\gamma}{2}\left(q_{zx}^2-q_{zy}^2\right)
+			\exp\!\left[-\frac{\gamma^2}{2}N\left(1-q_{xy}^2\right)\right]
+		}
+		\qquad (N=n+1).
+		\label{eq:Ixyz-final}
+	\end{equation}
+	This is the explicit Gaussian $J$-integral result for each $(x,y,z)$ term.
+	
+	\section*{4. Where this sits in your current formula}
+	With kernel factors already pulled outside the integral, each summand is
+	\begin{equation}
+		\overline{K_\beta(z,x)}\,K_\beta(z,y)\,I_{xyz},
+	\end{equation}
+	so the expectation becomes
+	\begin{equation}
+		\E_J[\langle\cdots\rangle]
+		=
+		\left(\frac12\right)^N
+		\sum_{x,y,z}
+		\overline{K_\beta(z,x)}\,K_\beta(z,y)
+		\cdot I_{xyz},
+	\end{equation}
+	with $I_{xyz}$ given by \eqref{eq:Ixyz-final}.
+	This is exactly the point before doing the remaining combinatorial/mixer-kernel summation.
+	
+	\section*{5. What is the overlap $q$?}
+	The overlap
+	\begin{equation}
+		q_{uv}=\frac1N\sum_j \sigma_j(u)\sigma_j(v)
+	\end{equation}
+	measures similarity between spin configurations $u,v$.
+	Equivalent Hamming-distance form:
+	\begin{equation}
+		q_{uv}=1-\frac{2\,d_H(u,v)}{N}.
+	\end{equation}
+	So $q=1$ means identical states, $q=-1$ means fully opposite spins, and intermediate values quantify partial alignment.
+	
+	\section*{6. Spin-glass meaning (SK theory)}
+	In spin-glass theory, $q$ is the fundamental order parameter:
+	\begin{itemize}
+		\item It labels similarity between different Gibbs samples (``replicas'').
+		\item The distribution $P(q)$ is the object that distinguishes phases.
+		\item Replica-symmetric regimes have a simpler overlap structure; full RSB has a nontrivial broad $P(q)$ and ultrametric organization of pure states.
+	\end{itemize}
+	In this QAOA/SK calculation, overlap appears directly because Gaussian cost correlations satisfy
+	\begin{equation}
+		\Cov(C_u,C_v)\propto q_{uv}^2,
+	\end{equation}
+	so all $J$-averaged phase factors and cost insertions reduce to overlap-dependent expressions.
+	
+	\section*{7. Practical interpretation for your proof pipeline}
+	At your current stage:
+	\begin{enumerate}
+		\item Sum/integral order has been swapped (with integrability assumptions).
+		\item Kernel factors are outside the $J$-integral.
+		\item The remaining $J$-integral is now explicit via \eqref{eq:Ixyz-final}.
+	\end{enumerate}
+	The next proof task is therefore purely algebraic/combinatorial in $x,y,z$ plus trigonometric simplification through the mixer kernel structure.
+	
+\end{document}
