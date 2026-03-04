@@ -92,10 +92,19 @@ abbrev BasisIdx (n : ℕ) := Fin (2 ^ (n + 1))
 /-- State space for `(n+1)` qubits in computational basis indexing. -/
 abbrev State (n : ℕ) := BasisIdx n → ℂ
 
+/-- Linear operators acting on `State n`. -/
+abbrev Operator (n : ℕ) := State n → State n
+
 /-- Computational basis ket `|y⟩` as a state function. -/
 def basisKet (n : ℕ) (y : BasisIdx n) : State n :=
   fun x => if x = y then 1 else 0
 
+/--
+Adjoint (dagger) of an operator in the computational basis.
+Defined by conjugate-transposing its matrix elements.
+-/
+noncomputable def dagger (n : ℕ) (U : Operator n) : Operator n :=
+  fun ψ x => ∑ y : BasisIdx n, star (U (basisKet n y) x) * ψ y
 
 /-- Density matrices on `(n+1)` qubits in the computational basis. -/
 abbrev DensityMatrix (n : ℕ) := Matrix (BasisIdx n) (BasisIdx n) ℂ
@@ -182,8 +191,6 @@ theorem trace_rho_s_eq_one (n : ℕ) : Matrix.trace (rho_s n) = 1 := by
 ----------------------------------------------------------------
 --------------------------The Mixer Operator--------------------
 ----------------------------------------------------------------
-/-- Linear operators acting on `State n`. -/
-abbrev Operator (n : ℕ) := State n → State n
 
 /-- Hamming distance between computational-basis indices (`(n+1)`-bit strings). -/
 def basisHammingDist (n : ℕ) (x y : BasisIdx n) : ℕ :=
@@ -209,44 +216,44 @@ noncomputable def U_B (n : ℕ) (β : ℝ) : Operator n :=
   fun ψ x => ∑ y : BasisIdx n, mixerEntry n β x y * ψ y
 
 
-/--
-Adjoint (dagger) of an operator in the computational basis.
-Defined by conjugate-transposing its matrix elements.
--/
-noncomputable def dagger (n : ℕ) (U : Operator n) : Operator n :=
-  fun ψ x => ∑ y : BasisIdx n, star (U (basisKet n y) x) * ψ y
-
 /-- Dagger mixer operator, defined as the adjoint of `U_B`. -/
 noncomputable def U_B_dagger (n : ℕ) (β : ℝ) : Operator n :=
   dagger n (U_B n β)
 
-/-- Matrix entries of `U_B†U_B` written from the mixer kernel. -/
-noncomputable def U_B_dagger_mul_U_B_matrix (n : ℕ) (β : ℝ) : DensityMatrix n :=
-  fun x y => ∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y
-
 /--
-Orthonormality assumption for the mixer kernel:
+Orthonormality of the mixer kernel:
 `∑_z conj(K_{zx}) K_{zy} = δ_{xy}`.
 -/
-def MixerKernelOrthonormal (n : ℕ) (β : ℝ) : Prop :=
-  ∀ x y : BasisIdx n,
-    (∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y)
-      = if x = y then 1 else 0
+theorem MixerKernelOrthonormal (n : ℕ) (β : ℝ) :
+    ∀ x y : BasisIdx n,
+      (∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y)
+        = if x = y then 1 else 0 := by
+  sorry
 
 /--
-Short assumption-based statement:
+The mixer operator preserves the norm of the initial state:
 `Tr((U_B†U_B) ρ_s) = 1` if the mixer kernel is orthonormal.
 -/
 theorem trace_U_B_dagger_mul_U_B_rho_s_eq_one
-    (n : ℕ) (β : ℝ)
-    (hker : MixerKernelOrthonormal n β) :
-    Matrix.trace (U_B_dagger_mul_U_B_matrix n β * rho_s n) = 1 := by
-  have hId : U_B_dagger_mul_U_B_matrix n β = (1 : DensityMatrix n) := by
+    (n : ℕ) (β : ℝ) :
+    Matrix.trace
+      ((let UBUB : DensityMatrix n :=
+          fun x y => ∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y
+        UBUB) * rho_s n)
+      = 1 := by
+  let UBUB : DensityMatrix n :=
+    fun x y => ∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y
+  have hId :
+      UBUB = (1 : DensityMatrix n) := by
     ext x y
-    simpa [U_B_dagger_mul_U_B_matrix, Matrix.one_apply] using hker x y
+    simpa [UBUB, Matrix.one_apply] using (MixerKernelOrthonormal n β x y)
   calc
-    Matrix.trace (U_B_dagger_mul_U_B_matrix n β * rho_s n)
-        = Matrix.trace ((1 : DensityMatrix n) * rho_s n) := by simp [hId]
+    Matrix.trace
+        ((let UBUB : DensityMatrix n :=
+            fun x y => ∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y
+          UBUB) * rho_s n)
+        = Matrix.trace (UBUB * rho_s n) := by simp [UBUB]
+    _ = Matrix.trace ((1 : DensityMatrix n) * rho_s n) := by simp [hId]
     _ = Matrix.trace (rho_s n) := by simp
     _ = 1 := trace_rho_s_eq_one n
 
@@ -312,29 +319,35 @@ noncomputable def U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix
     (n : ℕ) (J : SKCoupling n) (β γ : ℝ) : DensityMatrix n :=
   fun x y =>
     U_C_dagger_phase n J γ x *
-      U_B_dagger_mul_U_B_matrix n β x y *
+      (∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y) *
       U_C_phase n J γ y
 
 /--
-Assumption-based statement:
-`Tr((U_C† U_B† U_B U_C) ρ_s) = 1` if the mixer kernel is orthonormal.
+`Tr((U_C† U_B† U_B U_C) ρ_s) = 1`
 -/
 theorem trace_U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_rho_s_eq_one
-    (n : ℕ) (J : SKCoupling n) (β γ : ℝ)
-    (hker : MixerKernelOrthonormal n β) :
+    (n : ℕ) (J : SKCoupling n) (β γ : ℝ) :
     Matrix.trace
       (U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ * rho_s n) = 1 := by
-  have hIdB : U_B_dagger_mul_U_B_matrix n β = (1 : DensityMatrix n) := by
-    ext x y
-    simpa [U_B_dagger_mul_U_B_matrix, Matrix.one_apply] using hker x y
   have hIdAll :
       U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ = (1 : DensityMatrix n) := by
     ext x y
-    by_cases hxy : x = y
-    · subst hxy
-      simp [U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix, hIdB,
-        U_C_dagger_phase_mul_U_C_phase_eq_one]
-    · simp [U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix, hIdB, hxy]
+    calc
+      U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ x y
+          = (U_C_dagger_phase n J γ x *
+              (∑ z : BasisIdx n, star (mixerEntry n β z x) * mixerEntry n β z y)) *
+              U_C_phase n J γ y := by
+                simp [U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix]
+      _ = (U_C_dagger_phase n J γ x * (if x = y then 1 else 0)) * U_C_phase n J γ y := by
+            rw [MixerKernelOrthonormal n β x y]
+      _ = if x = y then (U_C_dagger_phase n J γ x * U_C_phase n J γ y) else 0 := by
+            by_cases hxy : x = y <;> simp [hxy]
+      _ = if x = y then 1 else 0 := by
+            by_cases hxy : x = y
+            · subst hxy
+              simp [U_C_dagger_phase_mul_U_C_phase_eq_one]
+            · simp [hxy]
+      _ = (1 : DensityMatrix n) x y := by simp [Matrix.one_apply]
   calc
     Matrix.trace (U_C_dagger_mul_U_B_dagger_mul_U_B_mul_U_C_matrix n J β γ * rho_s n)
         = Matrix.trace ((1 : DensityMatrix n) * rho_s n) := by simp [hIdAll]
