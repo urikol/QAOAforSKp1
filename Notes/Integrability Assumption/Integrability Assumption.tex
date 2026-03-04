@@ -1,0 +1,83 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{hyperref}
+
+\title{Integrability Assumption for Swapping Integral and Finite Sums\\in the QAOA--SK Expansion}
+\author{}
+\date{}
+
+\begin{document}
+	\maketitle
+	
+	\section*{Context}
+	In the current Lean development, the quantity of interest is
+	\begin{equation}
+		\mathbb{E}_{J}\!\left[\langle s|U_C^\dagger U_B^\dagger \frac{C}{n+1} U_B U_C|s\rangle\right].
+	\end{equation}
+	After basis expansion and simplification of the two $|s\rangle$ amplitudes, we have
+	\begin{equation}
+		\mathbb{E}_{J}[\cdots]
+		=
+		\left(\frac12\right)^{n+1}
+		\int
+		\sum_{x,y,z}
+		F_{x,y,z}(J)\,d\mu(J),
+		\label{eq:before-swap}
+	\end{equation}
+	where (for fixed $x,y,z$)
+	\begin{equation}
+		F_{x,y,z}(J)
+		=
+		U_C^{\dagger\,\mathrm{phase}}(x;J)
+		\,\overline{K_\beta(z,x)}
+		\,\frac{C_J(z)}{n+1}
+		\,K_\beta(z,y)
+		\,U_C^{\mathrm{phase}}(y;J).
+	\end{equation}
+	
+	\section*{What the assumption says}
+	The theorem \texttt{expectedQAOACostVEV\_swap\_integral\_sum} introduces
+	\begin{equation}
+		\forall x,y,z,\quad F_{x,y,z} \in L^1(\mu),
+	\end{equation}
+	i.e. each indexed summand is Bochner-integrable (here codomain is $\mathbb{C}$, so this is the usual complex integrability condition):
+	\begin{equation}
+		\int \lvert F_{x,y,z}(J)\rvert\,d\mu(J) < \infty,
+	\end{equation}
+	and measurability.
+	
+	In Lean, this is the hypothesis
+	\begin{equation}
+		\texttt{hInt :}\; \forall x\,y\,z,\; \texttt{MeasureTheory.Integrable (fun J => ... ) $\mu$}.
+	\end{equation}
+	
+	\section*{Why this assumption is needed}
+	To exchange integral and finite sums, the proof repeatedly applies
+	\begin{equation}
+		\texttt{MeasureTheory.integral\_finset\_sum}.
+	\end{equation}
+	That lemma requires integrability of each function being summed. Since we have a triple finite sum, we apply the lemma three times (for $x$, then $y$, then $z$). The assumption \texttt{hInt} supplies exactly these hypotheses.
+	
+	\section*{Result after swapping}
+	Under \texttt{hInt}, equation \eqref{eq:before-swap} becomes
+	\begin{equation}
+		\mathbb{E}_{J}[\cdots]
+		=
+		\left(\frac12\right)^{n+1}
+		\sum_{x,y,z}
+		\int F_{x,y,z}(J)\,d\mu(J).
+		\label{eq:after-swap}
+	\end{equation}
+	This is precisely the mathematical content of the Lean theorem
+	\texttt{expectedQAOACostVEV\_swap\_integral\_sum}.
+	
+	\section*{No extra physics assumptions}
+	This step does \emph{not} use SK-specific Gaussian identities yet. It is a measure-theoretic rearrangement step:
+	\begin{itemize}
+		\item algebraic structure from earlier expansions, and
+		\item integrability to justify changing order of finite sums and integration.
+	\end{itemize}
+	The SK/Gaussian calculations enter in later steps when evaluating each integral term in \eqref{eq:after-swap} analytically.
+	
+\end{document}
