@@ -142,11 +142,11 @@ noncomputable def rho_s (n : ℕ) : DensityMatrix n :=
   pureDensity n (s n)
 
 /--
-`⟨i|s⟩ = 1/√(2^(n+1))`
+`⟨i|s⟩ = (√(2^(n+1)))⁻¹`
 is the normalization factor for the uniform superposition on `2^(n+1)` basis states.
 -/
 lemma s_entry_const (n : ℕ) (i : BasisIdx n) :
-    s n i = ((Real.sqrt 2 : ℂ)⁻¹) ^ (n + 1) := by
+    s n i = (Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ)⁻¹ := by
   let c : ℂ := (Real.sqrt 2 : ℂ)⁻¹
   have hketPlus : ∀ j : Fin 2, ketPlus j = c := by
     intro j
@@ -160,7 +160,31 @@ lemma s_entry_const (n : ℕ) (i : BasisIdx n) :
     | succ n ih =>
         intro j
         simp [s, hketPlus, ih, pow_succ, mul_comm]
-  simpa [c] using hs_const n i
+  have hsqrt_pow : ∀ m : ℕ, Real.sqrt (2 ^ m : ℝ) = (Real.sqrt 2) ^ m := by
+    intro m
+    induction m with
+    | zero =>
+        simp
+    | succ m ihm =>
+        have h2nonneg : (0 : ℝ) ≤ 2 := by norm_num
+        have hpow_nonneg : (0 : ℝ) ≤ (2 ^ m : ℝ) := by positivity
+        calc
+          Real.sqrt (2 ^ (m + 1) : ℝ)
+              = Real.sqrt ((2 ^ m : ℝ) * 2) := by
+                  simp [pow_succ, mul_comm]
+          _ = Real.sqrt (2 ^ m : ℝ) * Real.sqrt 2 := by
+                exact Real.sqrt_mul hpow_nonneg (2 : ℝ)
+          _ = (Real.sqrt 2) ^ m * Real.sqrt 2 := by rw [ihm]
+          _ = (Real.sqrt 2) ^ (m + 1) := by simp [pow_succ]
+  have hsqrt_powC :
+      (Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ) = (Real.sqrt 2 : ℂ) ^ (n + 1) := by
+    exact_mod_cast hsqrt_pow (n + 1)
+  calc
+    s n i = c ^ (n + 1) := hs_const n i
+    _ = ((Real.sqrt 2 : ℂ)⁻¹) ^ (n + 1) := by simp [c]
+    _ = ((Real.sqrt 2 : ℂ) ^ (n + 1))⁻¹ := by rw [inv_pow]
+    _ = (Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ)⁻¹ := by
+          simp [hsqrt_powC]
 
 /-- The initial state's density matrix has unit trace. -/
 theorem trace_rho_s_eq_one (n : ℕ) : Matrix.trace (rho_s n) = 1 := by
@@ -333,7 +357,6 @@ lemma U_C_dagger_phase_mul_U_C_phase_eq_one
           simpa [Complex.exp_add] using (Complex.exp_add (Complex.I * a) ((-Complex.I) * a)).symm
     _ = Complex.exp 0 := by simp
     _ = 1 := by simp
-
 /--
 Matrix entries of `U_C† U_B† U_B U_C` in computational basis.
 `U_C` contributes only diagonal phase factors on the two outer sides.
@@ -412,6 +435,414 @@ Ensemble expectation over SK couplings:
 `E_J(⟨s| U_C† U_B† exp(i λ (C/(n+1))) U_B U_C |s⟩)`.
 `μ` is the probability measure for `J`.
 -/
-noncomputable def expectedQAOAGenVEV
+noncomputable def ExpectedGeneratingFunction
     (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ) : ℂ :=
   ∫ J, QAOAGenVEV n J β γ lam ∂μ
+
+
+----------------------------------------------------------------
+------Evaluation of the generating function - 1st step----------
+----------------------------------------------------------------
+
+/--
+Insert complete computational-basis resolutions (`|x⟩, |z⟩, |y⟩`)
+into the generating function expression to rewrite:
+`E_J(⟨s| U_C† U_B† exp(i λ (C/(n+1))) U_B U_C |s⟩)`
+`=`
+`E_J( ⟨s|U_C†|x⟩ ⟨x|U_B†|z⟩ exp(i λ (C/(n+1))) ⟨z|U_B|y⟩⟨y|U_C|s⟩  )`
+`=`
+`E_J( ⟨s|x⟩ exp(i γ C(x))  ⟨x|U_B†|z⟩  exp(i λ (C/(n+1)))  ⟨z|U_B|y⟩ exp(-i γ C(y))  ⟨y|s⟩)`.
+-/
+theorem ExpectedGeneratingFunction_insert_basis_xyz
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∫ J,
+        ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+          star (s n x) *
+            U_C_dagger_phase n J γ x *
+            star (mixerKernel n β z x) *
+            Complex.exp
+              (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))) *
+            mixerKernel n β z y *
+            U_C_phase n J γ y *
+            s n y ∂μ := by
+  simp [ExpectedGeneratingFunction, QAOAGenVEV, QAOAGenMatrix, Matrix.trace, Matrix.mul_apply,
+    rho_s, pureDensity, Finset.mul_sum, mul_comm, mul_left_comm]
+
+/--
+Replace the `|s⟩` amplitudes in the basis expansion by their explicit value
+`(√(2^(n+1)))⁻¹`:
+`⟨s|x⟩ = (√(2^(n+1)))⁻¹` and `⟨y|s⟩ = (√(2^(n+1)))⁻¹`.
+-/
+theorem ExpectedGeneratingFunction_replace_s_factors
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∫ J,
+        ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+          star ((Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ)⁻¹) *
+            U_C_dagger_phase n J γ x *
+            star (mixerKernel n β z x) *
+            Complex.exp
+              (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))) *
+            mixerKernel n β z y *
+            U_C_phase n J γ y *
+            ((Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ)⁻¹) ∂μ := by
+  simp [ExpectedGeneratingFunction_insert_basis_xyz, s_entry_const]
+
+/--
+Combine the two cost-unitary phase factors into a single
+exponential phase:
+`U_C†(x) U_C(y) exp(i λ C_J(z)/(n+1))]`
+` = `
+`exp(i γ (C_J(x)-C_J(y)) + i λ C_J(z)/(n+1))`.
+-/
+lemma U_C_phase_pair_times_genPhase
+    (n : ℕ) (J : SKCoupling n) (γ lam : ℝ)
+    (x y z : BasisIdx n) :
+    U_C_dagger_phase n J γ x *
+      U_C_phase n J γ y *
+      Complex.exp (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))
+      =
+      Complex.exp
+        ((Complex.I * ((γ : ℂ) * (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+          (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) := by
+  let cx : ℂ := (skCostOnBasis n J x : ℂ)
+  let cy : ℂ := (skCostOnBasis n J y : ℂ)
+  let gz : ℂ := Complex.exp (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))
+  have hxy :
+      U_C_dagger_phase n J γ x * U_C_phase n J γ y
+        = Complex.exp (Complex.I * ((γ : ℂ) * (cx - cy))) := by
+    calc
+      U_C_dagger_phase n J γ x * U_C_phase n J γ y
+          = Complex.exp (((Complex.I) * (γ : ℂ)) * cx) *
+              Complex.exp (((-Complex.I) * (γ : ℂ)) * cy) := by
+                simp [U_C_dagger_phase, U_C_phase, cx, cy, mul_comm, mul_left_comm]
+      _ = Complex.exp ((((Complex.I) * (γ : ℂ)) * cx) + (((-Complex.I) * (γ : ℂ)) * cy)) := by
+            exact
+              (Complex.exp_add (((Complex.I) * (γ : ℂ)) * cx) (((-Complex.I) * (γ : ℂ)) * cy)).symm
+      _ = Complex.exp (Complex.I * ((γ : ℂ) * (cx - cy))) := by
+            ring_nf
+  calc
+    U_C_dagger_phase n J γ x * U_C_phase n J γ y *
+        Complex.exp (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))
+        = (U_C_dagger_phase n J γ x * U_C_phase n J γ y) * gz := by
+            simp [gz, mul_assoc]
+    _ = Complex.exp (Complex.I * ((γ : ℂ) * (cx - cy))) * gz := by simp [hxy]
+    _ =
+        Complex.exp (Complex.I * ((γ : ℂ) *
+          (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) *
+          Complex.exp (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))) := by
+            simp [cx, cy, gz]
+    _ = Complex.exp
+          ((Complex.I * ((γ : ℂ) * (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+            (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) := by
+          exact
+            (Complex.exp_add
+              (Complex.I * ((γ : ℂ) * (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))))
+              (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))).symm
+
+
+/--
+Merge the cost-unitary phase factors into a single exponential,
+merge the two normalization factors `(√(2^(n+1)))⁻¹` into `(2^(n+1))⁻¹`
+and take it out of the sum and integral,to rewrite the generating function as:
+`E_J(⟨s| U_C† U_B† exp(i λ (C/(n+1))) U_B U_C |s⟩)`
+`=`
+`(2^(n+1))⁻¹ * E_J( ∑_{x,y,z} exp(i γ (C_J(x)-C_J(y)) + i λ C_J(z)/(n+1)) * K_{zx} * K_{zy} )`.
+-/
+theorem ExpectedGeneratingFunction_merge
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ((2 ^ (n + 1) : ℂ)⁻¹) *
+        (∫ J,
+          ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+            Complex.exp
+              ((Complex.I *
+                  ((γ : ℂ) *
+                    (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                (Complex.I *
+                  ((lam : ℂ) *
+                    ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+              mixerKernel n β z y *
+              star (mixerKernel n β z x) ∂μ) := by
+  let c : ℂ := ((2 ^ (n + 1) : ℂ)⁻¹)
+  let f : SKCoupling n → ℂ := fun J =>
+    ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+      U_C_dagger_phase n J γ x *
+        U_C_phase n J γ y *
+        mixerKernel n β z y *
+        Complex.exp
+          (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))) *
+        star (mixerKernel n β z x)
+  let a : ℂ := (Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ)⁻¹
+  have hsqR : (Real.sqrt (2 ^ (n + 1) : ℝ)) ^ 2 = (2 ^ (n + 1) : ℝ) := by
+    nlinarith [Real.sq_sqrt (show (0 : ℝ) ≤ (2 ^ (n + 1) : ℝ) by positivity)]
+  have hsq : ((Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ) ^ 2) = (2 ^ (n + 1) : ℂ) := by
+    exact_mod_cast hsqR
+  have hfac : a * a = ((2 ^ (n + 1) : ℂ)⁻¹) := by
+    calc
+      a * a = a ^ 2 := by simp [pow_two]
+      _ = ((Real.sqrt (2 ^ (n + 1) : ℝ) : ℂ) ^ 2)⁻¹ := by
+            simp [a, inv_pow]
+      _ = ((2 ^ (n + 1) : ℂ)⁻¹) := by simp [hsq]
+  have hfac_mul (b : ℂ) : a * (a * b) = ((2 ^ (n + 1) : ℂ)⁻¹) * b := by
+    calc
+      a * (a * b) = (a * a) * b := by ring
+      _ = ((2 ^ (n + 1) : ℂ)⁻¹) * b := by simp [hfac]
+  have hinside :
+      ExpectedGeneratingFunction n μ β γ lam
+        = ∫ J,
+            ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+              c *
+                (U_C_dagger_phase n J γ x *
+                  (U_C_phase n J γ y *
+                    (mixerKernel n β z y *
+                      (Complex.exp
+                        (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))) *
+                        star (mixerKernel n β z x)))) ) ∂μ := by
+    simpa [a, c, hfac, hfac_mul, mul_assoc, mul_comm, mul_left_comm] using
+      (ExpectedGeneratingFunction_replace_s_factors n μ β γ lam)
+  calc
+    ExpectedGeneratingFunction n μ β γ lam
+        = ∫ J, c * f J ∂μ := by
+            simpa [f, Finset.mul_sum, mul_assoc, mul_comm, mul_left_comm] using hinside
+    _ = c * (∫ J, f J ∂μ) := by
+          simpa using (MeasureTheory.integral_const_mul c f)
+    _ = ((2 ^ (n + 1) : ℂ)⁻¹) *
+          (∫ J,
+            ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+              U_C_dagger_phase n J γ x *
+                (U_C_phase n J γ y *
+                  (mixerKernel n β z y *
+                    (Complex.exp
+                      (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))) *
+                      star (mixerKernel n β z x))) ) ∂μ) := by
+            simp [c, f, mul_assoc, mul_comm, mul_left_comm]
+    _ = ((2 ^ (n + 1) : ℂ)⁻¹) *
+          (∫ J,
+            ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+              Complex.exp
+                ((Complex.I *
+                    ((γ : ℂ) *
+                      (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                  (Complex.I *
+                    ((lam : ℂ) *
+                      ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+                mixerKernel n β z y *
+                star (mixerKernel n β z x) ∂μ) := by
+            apply congrArg (fun t => ((2 ^ (n + 1) : ℂ)⁻¹) * t)
+            refine MeasureTheory.integral_congr_ae ?_
+            refine Filter.Eventually.of_forall ?_
+            intro J
+            refine Finset.sum_congr rfl ?_
+            intro x hx
+            refine Finset.sum_congr rfl ?_
+            intro y hy
+            refine Finset.sum_congr rfl ?_
+            intro z hz
+            have hphase := U_C_phase_pair_times_genPhase n J γ lam x y z
+            calc
+              U_C_dagger_phase n J γ x *
+                  (U_C_phase n J γ y *
+                    (mixerKernel n β z y *
+                      (Complex.exp
+                        (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))) *
+                        star (mixerKernel n β z x))))
+                  =
+                  (U_C_dagger_phase n J γ x * U_C_phase n J γ y *
+                    Complex.exp
+                      (Complex.I * ((lam : ℂ) * ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+                    mixerKernel n β z y *
+                    star (mixerKernel n β z x) := by
+                      ring
+              _ =
+                  Complex.exp
+                    ((Complex.I *
+                        ((γ : ℂ) *
+                          (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                      (Complex.I *
+                        ((lam : ℂ) *
+                          ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+                    mixerKernel n β z y *
+                    star (mixerKernel n β z x) := by
+                      simpa [mul_assoc, mul_comm, mul_left_comm] using
+                        congrArg
+                          (fun t =>
+                            t * mixerKernel n β z y * star (mixerKernel n β z x))
+                          hphase
+
+
+
+/--
+Swap the order of the finite sums (`x,y,z`) and the `J`-integral.
+-/
+theorem ExpectedGeneratingFunction_swap_integral_and_sum
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ((2 ^ (n + 1) : ℂ)⁻¹) *
+        (∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+          ∫ J,
+            Complex.exp
+              ((Complex.I *
+                  ((γ : ℂ) *
+                    (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                (Complex.I *
+                  ((lam : ℂ) *
+                    ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+            mixerKernel n β z y *
+            star (mixerKernel n β z x) ∂μ) := by
+  rw [ExpectedGeneratingFunction_merge]
+  apply congrArg (fun t => ((2 ^ (n + 1) : ℂ)⁻¹) * t)
+  let g : BasisIdx n → BasisIdx n → BasisIdx n → SKCoupling n → ℂ :=
+    fun x y z J =>
+      Complex.exp
+        ((Complex.I *
+            ((γ : ℂ) *
+              (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+          (Complex.I *
+            ((lam : ℂ) *
+              ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+      mixerKernel n β z y *
+      star (mixerKernel n β z x)
+  calc
+    ∫ J, ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n, g x y z J ∂μ
+        = ∑ x : BasisIdx n, ∫ J, ∑ y : BasisIdx n, ∑ z : BasisIdx n, g x y z J ∂μ := by
+            simpa [g] using
+              (MeasureTheory.integral_finset_sum
+                (μ := μ)
+                (s := (Finset.univ : Finset (BasisIdx n)))
+                (f := fun x J => ∑ y : BasisIdx n, ∑ z : BasisIdx n, g x y z J)
+                (by
+                  intro x hx
+                  exact MeasureTheory.integrable_finset_sum _ fun y _ =>
+                    MeasureTheory.integrable_finset_sum _ fun z _ => hInt x y z))
+    _ = ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∫ J, ∑ z : BasisIdx n, g x y z J ∂μ := by
+          refine Finset.sum_congr rfl ?_
+          intro x hx
+          simpa [g] using
+            (MeasureTheory.integral_finset_sum
+              (μ := μ)
+              (s := (Finset.univ : Finset (BasisIdx n)))
+              (f := fun y J => ∑ z : BasisIdx n, g x y z J)
+              (by
+                intro y hy
+                exact MeasureTheory.integrable_finset_sum _ fun z _ => hInt x y z))
+    _ = ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n, ∫ J, g x y z J ∂μ := by
+          refine Finset.sum_congr rfl ?_
+          intro x hx
+          refine Finset.sum_congr rfl ?_
+          intro y hy
+          simpa [g] using
+            (MeasureTheory.integral_finset_sum
+              (μ := μ)
+              (s := (Finset.univ : Finset (BasisIdx n)))
+              (f := fun z J => g x y z J)
+              (by
+                intro z hz
+                exact hInt x y z))
+    _ = ∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+          ∫ J,
+            Complex.exp
+              ((Complex.I *
+                  ((γ : ℂ) *
+                    (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                (Complex.I *
+                  ((lam : ℂ) *
+                    ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+            mixerKernel n β z y *
+            star (mixerKernel n β z x) ∂μ := by
+          simp [g]
+
+/--
+Pull the mixer-kernel factors outside the `J`-integral.
+For fixed `x,y,z`, `mixerKernel n β z y * star (mixerKernel n β z x)` does not depend on `J`,
+so it is a constant multiplier with respect to the measure over SK couplings.
+-/
+theorem ExpectedGeneratingFunction_pull_out_kernel_factors
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ((2 ^ (n + 1) : ℂ)⁻¹) *
+        (∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n,
+          (mixerKernel n β z y * star (mixerKernel n β z x)) *
+            (∫ J,
+              Complex.exp
+                ((Complex.I *
+                    ((γ : ℂ) *
+                      (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                  (Complex.I *
+                    ((lam : ℂ) *
+                      ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ)) := by
+  rw [ExpectedGeneratingFunction_swap_integral_and_sum n μ β γ lam hInt]
+  apply congrArg (fun t => ((2 ^ (n + 1) : ℂ)⁻¹) * t)
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  refine Finset.sum_congr rfl ?_
+  intro z hz
+  let phase : SKCoupling n → ℂ := fun J =>
+    Complex.exp
+      ((Complex.I *
+          ((γ : ℂ) *
+            (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+        (Complex.I *
+          ((lam : ℂ) *
+            ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ))))
+  let k : ℂ := mixerKernel n β z y * star (mixerKernel n β z x)
+  calc
+    ∫ J,
+      Complex.exp
+        ((Complex.I *
+            ((γ : ℂ) *
+              (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+          (Complex.I *
+            ((lam : ℂ) *
+              ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+      mixerKernel n β z y *
+      star (mixerKernel n β z x) ∂μ
+        = ∫ J, phase J * k ∂μ := by
+            simp [phase, k, mul_assoc, mul_comm, mul_left_comm]
+    _
+        = ∫ J, k * phase J ∂μ := by
+            simp [phase, k, mul_comm, mul_left_comm]
+    _ = k * ∫ J, phase J ∂μ := by
+          simpa [phase, k] using (MeasureTheory.integral_const_mul k phase)
+    _ = (mixerKernel n β z y * star (mixerKernel n β z x)) *
+          (∫ J,
+            Complex.exp
+              ((Complex.I *
+                  ((γ : ℂ) *
+                    (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                (Complex.I *
+                  ((lam : ℂ) *
+                    ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ) := by
+          simp [phase, k]
