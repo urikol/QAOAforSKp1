@@ -1084,3 +1084,429 @@ theorem ExpectedGeneratingFunction_explicit_phase_after_spinProd
     Finset.sum_add_distrib, Finset.mul_sum]
   congr 1
   simp [div_eq_mul_inv, Finset.mul_sum, mul_assoc, mul_comm, mul_left_comm]
+
+
+----------------------------------------------------------------
+------Evaluation of the generating function - 3st step----------
+----------------Simplifying the Kernels-------------------------
+----------------------------------------------------------------
+
+
+/-- Bit/Hamming weight of a basis index (`(n+1)`-bit string). -/
+def bitWeight (n : ℕ) (x : BasisIdx n) : ℕ :=
+  ((Finset.range (n + 1)).filter (fun j => Nat.testBit x.1 j)).card
+
+/--
+For spin-product reindexing (`x*z`), the Hamming distance from `z`
+to `x*z` is exactly the weight of `x` (hence independent of `z`).
+-/
+lemma basisHammingDist_spinProd_right (n : ℕ) (x z : BasisIdx n) :
+    basisHammingDist n z (spinProdIdx n x z) = bitWeight n x := by
+  unfold basisHammingDist bitWeight
+  congr
+  ext j
+  by_cases hx : Nat.testBit x.1 j
+  · by_cases hz : Nat.testBit z.1 j
+    · simp [spinProdIdx, hx, hz]
+    · simp [spinProdIdx, hx, hz]
+  · by_cases hz : Nat.testBit z.1 j
+    · simp [spinProdIdx, hx, hz]
+    · simp [spinProdIdx, hx, hz]
+
+/-- Mixer kernel written using only the Hamming weight of the second argument. -/
+noncomputable def mixerKernelByWeight (n : ℕ) (β : ℝ) (x : BasisIdx n) : ℂ :=
+  let d := bitWeight n x
+  (Real.cos β : ℂ) ^ ((n + 1) - d) * ((-Complex.I) * (Real.sin β : ℂ)) ^ d
+
+/-- Simplify `Kβ(z, x*z)` to a weight-only expression (independent of `z`). -/
+lemma mixerKernel_spinProd_right_eq_weightForm
+    (n : ℕ) (β : ℝ) (x z : BasisIdx n) :
+    mixerKernel n β z (spinProdIdx n x z) = mixerKernelByWeight n β x := by
+  simp [mixerKernel, mixerKernelByWeight, basisHammingDist_spinProd_right]
+
+
+
+/--
+Kernel-simplified form of the post-change-variable explicit-phase formula:
+both mixer factors are rewritten as weight-only terms
+`Kβ(z, y*z) = Kβ_w(y)` and `Kβ(z, x*z) = Kβ_w(x)`.
+-/
+theorem ExpectedGeneratingFunction_explicit_phase_after_spinProd_kernel_simplified
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ((2 ^ (n + 1) : ℂ)⁻¹) *
+        (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+          (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+            (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)) := by
+  rw [ExpectedGeneratingFunction_explicit_phase_after_spinProd n μ β γ lam hInt]
+  apply congrArg (fun t => ((2 ^ (n + 1) : ℂ)⁻¹) * t)
+  refine Finset.sum_congr rfl ?_
+  intro z hz
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  simp [mixerKernel_spinProd_right_eq_weightForm]
+
+
+
+----------------------------------------------------------------
+------Evaluation of the generating function - 4st step----------
+-------------J_{jk} is distributed symmetrically----------------
+----------------------------------------------------------------
+
+/-- Distinguished all-`+1` spin index (bitstring `0...0`). -/
+def zeroBasisIdx (n : ℕ) : BasisIdx n :=
+  ⟨0, by
+    have hpow : 0 < 2 ^ (n + 1) := by
+      exact pow_pos (by decide : 0 < 2) (n + 1)
+    exact hpow⟩
+
+@[simp] lemma spinAt_zeroBasisIdx (n : ℕ) (j : Fin (n + 1)) :
+    spinAt n (zeroBasisIdx n) j = 1 := by
+  simp [spinAt, zeroBasisIdx]
+
+/-- Marginal law of one edge coupling `J_{jk}` under `μ`. -/
+noncomputable def edgeMarginal (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n))
+    (jk : Fin (n + 1) × Fin (n + 1)) : MeasureTheory.Measure ℝ :=
+  MeasureTheory.Measure.map (fun J : SKCoupling n => J jk.1 jk.2) μ
+
+/-- Edge characteristic function `E[e^{i t J_{jk}}]` under the marginal law. -/
+noncomputable def edgeChar (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n))
+    (jk : Fin (n + 1) × Fin (n + 1)) (t : ℝ) : ℂ :=
+  ∫ u, Complex.exp (Complex.I * ((t : ℂ) * (u : ℂ))) ∂(edgeMarginal n μ jk)
+
+/--
+Real coefficient multiplying `J_{jk}` in the post-spin-product phase.
+The full phase is `exp(i * Σ_{j<k} coeff * J_{jk})`.
+-/
+noncomputable def edgeCoeffAfterSpinProd
+    (n : ℕ) (x y z : BasisIdx n) (γ lam : ℝ)
+    (jk : Fin (n + 1) × Fin (n + 1)) : ℝ :=
+  skNormFactor n *
+    (spinAt n z jk.1 * spinAt n z jk.2) *
+    (γ * ((spinAt n x jk.1 * spinAt n x jk.2) - (spinAt n y jk.1 * spinAt n y jk.2)) +
+      (lam / (n + 1 : ℝ)))
+
+/-- Same edge coefficient at the reference spin `z = zeroBasisIdx`. -/
+noncomputable def edgeCoeffAfterSpinProd_z0
+    (n : ℕ) (x y : BasisIdx n) (γ lam : ℝ)
+    (jk : Fin (n + 1) × Fin (n + 1)) : ℝ :=
+  skNormFactor n *
+    (γ * ((spinAt n x jk.1 * spinAt n x jk.2) - (spinAt n y jk.1 * spinAt n y jk.2)) +
+      (lam / (n + 1 : ℝ)))
+
+lemma edgeCoeffAfterSpinProd_eq_sign_mul_z0
+    (n : ℕ) (x y z : BasisIdx n) (γ lam : ℝ)
+    (jk : Fin (n + 1) × Fin (n + 1)) :
+    edgeCoeffAfterSpinProd n x y z γ lam jk
+      = (spinAt n z jk.1 * spinAt n z jk.2) * edgeCoeffAfterSpinProd_z0 n x y γ lam jk := by
+  simp [edgeCoeffAfterSpinProd, edgeCoeffAfterSpinProd_z0, mul_assoc, mul_left_comm]
+
+lemma spinPair_eq_one_or_neg_one (n : ℕ) (z : BasisIdx n) (jk : Fin (n + 1) × Fin (n + 1)) :
+    (spinAt n z jk.1 * spinAt n z jk.2 = (1 : ℝ))
+      ∨ (spinAt n z jk.1 * spinAt n z jk.2 = (-1 : ℝ)) := by
+  by_cases hz1 : Nat.testBit z.1 jk.1.1 <;> by_cases hz2 : Nat.testBit z.1 jk.2.1 <;>
+    simp [spinAt, hz1, hz2]
+
+/--
+From edge independence (factorization of the phase integral over edges)
+and per-edge sign symmetry (`edgeChar(t)=edgeChar(-t)`), derive `z`-independence
+of the post-spin-product phase integral.
+-/
+theorem phaseIntegral_independent_of_z_from_edge_indep_and_symm
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (x y z : BasisIdx n) (γ lam : ℝ)
+    (hFactor : ∀ z' : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z' γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z' γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t)) :
+    (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+      = ∫ J, explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam ∂μ := by
+  calc
+    (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)) := by
+            simpa using hFactor z
+    _ = Finset.prod (skEdgeSet n) (fun jk =>
+          edgeChar n μ jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk)) := by
+          refine Finset.prod_congr rfl ?_
+          intro jk hjk
+          have hs := spinPair_eq_one_or_neg_one n z jk
+          rcases hs with hs | hs
+          · calc
+              edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)
+                  = edgeChar n μ jk
+                      ((spinAt n z jk.1 * spinAt n z jk.2) *
+                        edgeCoeffAfterSpinProd_z0 n x y γ lam jk) := by
+                        simp [edgeCoeffAfterSpinProd_eq_sign_mul_z0]
+              _ = edgeChar n μ jk
+                    ((1 : ℝ) * edgeCoeffAfterSpinProd_z0 n x y γ lam jk) := by
+                      simp [hs]
+              _ = edgeChar n μ jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk) := by simp
+          · calc
+              edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)
+                  = edgeChar n μ jk
+                      ((spinAt n z jk.1 * spinAt n z jk.2) *
+                        edgeCoeffAfterSpinProd_z0 n x y γ lam jk) := by
+                        simp [edgeCoeffAfterSpinProd_eq_sign_mul_z0]
+              _ = edgeChar n μ jk
+                    ((-1 : ℝ) * edgeCoeffAfterSpinProd_z0 n x y γ lam jk) := by
+                      simp [hs]
+              _ = edgeChar n μ jk (-(edgeCoeffAfterSpinProd_z0 n x y γ lam jk)) := by ring_nf
+              _ = edgeChar n μ jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk) := by
+                    simpa using (hEven jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk)).symm
+    _ = Finset.prod (skEdgeSet n) (fun jk =>
+          edgeChar n μ jk (edgeCoeffAfterSpinProd n x y (zeroBasisIdx n) γ lam jk)) := by
+          refine Finset.prod_congr rfl ?_
+          intro jk hjk
+          have hcoeff0 :
+              edgeCoeffAfterSpinProd n x y (zeroBasisIdx n) γ lam jk
+                = edgeCoeffAfterSpinProd_z0 n x y γ lam jk := by
+            simp [edgeCoeffAfterSpinProd, edgeCoeffAfterSpinProd_z0, zeroBasisIdx, spinAt]
+          simp [hcoeff0]
+    _ = ∫ J, explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam ∂μ := by
+          simpa using (hFactor (zeroBasisIdx n)).symm
+
+/--
+Final step under explicit assumptions:
+1) edge-independence as factorization of the phase integral over edges (`hFactor`);
+2) per-edge sign symmetry as evenness of each edge characteristic function (`hEven`).
+
+These imply `z`-independence of the phase integral, hence collapse of the `z`-sum.
+-/
+theorem ExpectedGeneratingFunction_edge_indep_and_symm_simplified
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          (∫ J, explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam ∂μ) := by
+  have hSymm : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = ∫ J, explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam ∂μ := by
+    intro x y z
+    exact phaseIntegral_independent_of_z_from_edge_indep_and_symm n μ x y z γ lam
+      (fun z' => hFactor x y z') hEven
+  rw [ExpectedGeneratingFunction_explicit_phase_after_spinProd_kernel_simplified n μ β γ lam hInt]
+  let z0 : BasisIdx n := zeroBasisIdx n
+  let inner : BasisIdx n → ℂ := fun z =>
+    ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+      (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+        (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+  have hInnerConst : ∀ z : BasisIdx n, inner z = inner z0 := by
+    intro z
+    unfold inner
+    refine Finset.sum_congr rfl ?_
+    intro x hx
+    refine Finset.sum_congr rfl ?_
+    intro y hy
+    simp [hSymm x y z, z0]
+  have hSumZ :
+      (∑ z : BasisIdx n, inner z)
+        = (2 ^ (n + 1) : ℂ) * inner z0 := by
+    calc
+      (∑ z : BasisIdx n, inner z)
+          = ∑ z : BasisIdx n, inner z0 := by
+              refine Finset.sum_congr rfl ?_
+              intro z hz
+              exact hInnerConst z
+      _ = (Fintype.card (BasisIdx n) : ℂ) * inner z0 := by simp
+      _ = (2 ^ (n + 1) : ℂ) * inner z0 := by simp [BasisIdx]
+  calc
+    ((2 ^ (n + 1) : ℂ)⁻¹) *
+        (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+          (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+            (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ))
+        = ((2 ^ (n + 1) : ℂ)⁻¹) * (∑ z : BasisIdx n, inner z) := by
+            simp [inner]
+    _ = ((2 ^ (n + 1) : ℂ)⁻¹) * ((2 ^ (n + 1) : ℂ) * inner z0) := by
+          simp [hSumZ]
+    _ = inner z0 := by
+          field_simp
+    _ = ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+          (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+            (∫ J, explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam ∂μ) := by
+          simp [inner, z0]
+
+/--
+`φ_{jk} := γ (x_j x_k - y_j y_k)` for fixed `x,y,γ`.
+-/
+noncomputable def phiEdge
+    (n : ℕ) (x y : BasisIdx n) (γ : ℝ) (jk : Fin (n + 1) × Fin (n + 1)) : ℝ :=
+  γ * ((spinAt n x jk.1 * spinAt n x jk.2) - (spinAt n y jk.1 * spinAt n y jk.2))
+
+/--
+Phase written using `φ_{jk}` at the reference `z = zeroBasisIdx`:
+`exp(i/√(n+1) * Σ_{j<k} J_{jk} (φ_{jk} + λ/(n+1)))`.
+-/
+noncomputable def explicitPhaseWithPhi
+    (n : ℕ) (J : SKCoupling n) (x y : BasisIdx n) (γ lam : ℝ) : ℂ :=
+  Complex.exp
+    (Complex.I * ((skNormFactor n : ℂ) *
+      (Finset.sum (skEdgeSet n) (fun jk =>
+        (J jk.1 jk.2 : ℂ) *
+          (((phiEdge n x y γ jk + lam / (n + 1 : ℝ)) : ℝ) : ℂ)))))
+
+lemma explicitPhaseAfterSpinProd_zero_eq_explicitPhaseWithPhi
+    (n : ℕ) (J : SKCoupling n) (x y : BasisIdx n) (γ lam : ℝ) :
+    explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam
+      = explicitPhaseWithPhi n J x y γ lam := by
+  simp [explicitPhaseAfterSpinProd, explicitPhaseWithPhi, phiEdge, spinAt_zeroBasisIdx]
+
+lemma edgeCoeffAfterSpinProd_zeroBasisIdx_eq_z0
+    (n : ℕ) (x y : BasisIdx n) (γ lam : ℝ) (jk : Fin (n + 1) × Fin (n + 1)) :
+    edgeCoeffAfterSpinProd n x y (zeroBasisIdx n) γ lam jk
+      = edgeCoeffAfterSpinProd_z0 n x y γ lam jk := by
+  simp [edgeCoeffAfterSpinProd, edgeCoeffAfterSpinProd_z0, spinAt_zeroBasisIdx]
+
+/--
+Edge-independence factorization for the `φ_{jk}` phase:
+`E_J[exp(i Σ_{j<k} ...)] = ∏_{j<k} E_{J_{jk}}[exp(i ...)]`.
+-/
+theorem explicitPhaseWithPhi_factorizes
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (x y : BasisIdx n) (γ lam : ℝ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk))) :
+    (∫ J, explicitPhaseWithPhi n J x y γ lam ∂μ)
+      = Finset.prod (skEdgeSet n) (fun jk =>
+          edgeChar n μ jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk)) := by
+  have hEq :
+      (∫ J, explicitPhaseWithPhi n J x y γ lam ∂μ)
+        = ∫ J, explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam ∂μ := by
+    refine MeasureTheory.integral_congr_ae ?_
+    exact Filter.Eventually.of_forall
+      (fun J => (explicitPhaseAfterSpinProd_zero_eq_explicitPhaseWithPhi n J x y γ lam).symm)
+  calc
+    (∫ J, explicitPhaseWithPhi n J x y γ lam ∂μ)
+        = ∫ J, explicitPhaseAfterSpinProd n J x y (zeroBasisIdx n) γ lam ∂μ := hEq
+    _
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y (zeroBasisIdx n) γ lam jk)) := by
+              simpa using (hFactor x y (zeroBasisIdx n))
+    _ = Finset.prod (skEdgeSet n) (fun jk =>
+          edgeChar n μ jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk)) := by
+          refine Finset.prod_congr rfl ?_
+          intro jk hjk
+          simp [edgeCoeffAfterSpinProd_zeroBasisIdx_eq_z0]
+
+/--
+Final formula rewritten with `φ_{jk}`.
+-/
+theorem ExpectedGeneratingFunction_edge_indep_and_symm_simplified_with_phi
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          (∫ J, explicitPhaseWithPhi n J x y γ lam ∂μ) := by
+  rw [ExpectedGeneratingFunction_edge_indep_and_symm_simplified n μ β γ lam hInt hFactor hEven]
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  refine MeasureTheory.integral_congr_ae ?_
+  exact Filter.Eventually.of_forall
+    (fun J => explicitPhaseAfterSpinProd_zero_eq_explicitPhaseWithPhi n J x y γ lam)
+
+/--
+Final `φ_{jk}` formula with explicit edgewise factorization:
+`E_J exp(i Σ_{j<k} ...)` is replaced by `∏_{j<k} E_{J_{jk}} exp(i ...)`.
+-/
+theorem ExpectedGeneratingFunction_edge_indep_and_symm_simplified_with_phi_factored
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          (Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk))) := by
+  rw [ExpectedGeneratingFunction_edge_indep_and_symm_simplified_with_phi
+        n μ β γ lam hInt hFactor hEven]
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  exact explicitPhaseWithPhi_factorizes n μ x y γ lam hFactor
+
+-- Current status (Step 4):
+-- ExpectedGeneratingFunction is reduced to an x,y sum with edgewise factorization:
+--   Σ_{x,y} Kβ_w(y) * conj(Kβ_w(x)) * Π_{j<k} χ_{jk}(a_{jk}(x,y)).
+-- Here:
+--   Kβ_w    := mixerKernelByWeight
+--   φ_{jk}  := phiEdge = γ (x_j x_k - y_j y_k)
+--   χ_{jk}  := edgeChar (edge marginal characteristic function)
+-- Final theorem:
+--   ExpectedGeneratingFunction_edge_indep_and_symm_simplified_with_phi_factored
