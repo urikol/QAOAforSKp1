@@ -1,0 +1,287 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+
+\title{Detailed Derivation Summary of \texttt{QAOAforSKp1/Basic.lean}}
+\author{}
+\date{\today}
+
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\ket}[1]{\lvert #1\rangle}
+\newcommand{\bra}[1]{\langle #1\rvert}
+\newcommand{\ip}[2]{\langle #1\mid #2\rangle}
+
+\begin{document}
+\maketitle
+
+\section{Scope and Goal}
+This note summarizes, in detail, the mathematical content currently formalized in
+\texttt{QAOAforSKp1/Basic.lean}. The file develops:
+\begin{enumerate}
+  \item finite-dimensional state/operator infrastructure for \((n+1)\)-qubit systems,
+  \item explicit computational-basis formulas for the mixer and SK cost operators,
+  \item the QAOA generating function objective
+  \[
+    \E_J\!\left[\bra{s}U_C^\dagger U_B^\dagger e^{i\lambda C/(n+1)}U_B U_C\ket{s}\right],
+  \]
+  \item a sequence of algebraic rewrites (basis insertion, phase consolidation, variable changes, factorization),
+  \item specialization to Gaussian couplings, giving explicit exponent structure and evaluation of the constant edge-sum term.
+\end{enumerate}
+
+\section{Hilbert-Space Model and Basic States}
+\subsection{Indexing and states}
+For each \(n\in\mathbb{N}\), the file uses
+\[
+  \texttt{BasisIdx}(n) = \mathrm{Fin}(2^{n+1}),
+\]
+so states are functions
+\[
+  \psi : \texttt{BasisIdx}(n) \to \C.
+\]
+The inner-product convention is encoded as
+\[
+  \texttt{bra}(\psi,\varphi) = \sum_{i\in\texttt{BasisIdx}(n)} \overline{\psi(i)}\,\varphi(i).
+\]
+
+\subsection{Single-qubit reference states}
+The file defines computational basis states and \(\ket{+}\) from the Hadamard action on \(\ket{0}\), then proves
+\[
+  \ip{+}{+}=1.
+\]
+
+\subsection{Uniform product state \(\ket{s}\)}
+The initial QAOA state is represented as the tensor-product uniform superposition over \((n+1)\) qubits:
+\[
+  \ket{s} = \ket{+}^{\otimes(n+1)}.
+\]
+Componentwise, each computational-basis amplitude is constant. The file proves
+\[
+  \ip{s}{s}=1.
+\]
+It also defines the pure density matrix
+\[
+  \rho_s = \ket{s}\!\bra{s}
+\]
+and proves
+\[
+  \tr(\rho_s)=1,
+\]
+including the identification \(\tr(\rho_s)=\ip{s}{s}\).
+
+\section{Mixer Operator Infrastructure}
+\subsection{Explicit kernel form}
+The mixer is represented in computational basis by
+\[
+  (U_B\psi)(x) = \sum_y K_\beta(x,y)\,\psi(y),
+\]
+with kernel
+\[
+  K_\beta(x,y)=\cos(\beta)^{(n+1)-d(x,y)}\,\bigl(-i\sin\beta\bigr)^{d(x,y)},
+\]
+where \(d(x,y)\) is Hamming distance over \((n+1)\)-bit strings.
+
+\subsection{Dagger and unitarity trace identity pathway}
+The file includes the adjoint-kernel matrix expression and trace statements of the form
+\[
+  \tr\big((U_B^\dagger U_B)\rho_s\big)=1,
+\]
+under mixer-kernel orthonormality. A theorem placeholder remains:
+\[
+  \texttt{MixerKernelOrthonormal}\;\text{(currently with \texttt{sorry}).}
+\]
+This is the only remaining explicit proof gap warning in current builds.
+
+\section{SK Cost Hamiltonian and Cost Unitary}
+\subsection{Couplings and edge set}
+Couplings are functions
+\[
+  J_{jk}:\mathrm{Fin}(n+1)\times\mathrm{Fin}(n+1)\to\R.
+\]
+The SK edge set is
+\[
+  \{(j,k): j<k\}.
+\]
+The file now proves exactly
+\[
+  |\{(j,k):j<k\}|=\frac{n(n+1)}{2}.
+\]
+
+\subsection{Spin map and SK cost on basis states}
+For basis index \(z\), the spin value is
+\[
+  s_j(z)\in\{+1,-1\},
+\]
+via bit test (0\(\mapsto\)+1, 1\(\mapsto\)-1). The SK normalization is
+\[
+  \texttt{skNormFactor}(n)=\frac{1}{\sqrt{n+1}},
+\]
+with proved square identity
+\[
+  \texttt{skNormFactor}(n)^2=\frac{1}{n+1}.
+\]
+The basis cost is
+\[
+  C_J(z)=\frac{1}{\sqrt{n+1}}\sum_{j<k}J_{jk}s_j(z)s_k(z).
+\]
+Then \(U_C\) and \(U_C^\dagger\) are diagonal phases:
+\[
+  U_C(\gamma)\ket{z}=e^{-i\gamma C_J(z)}\ket{z},\qquad
+  U_C(\gamma)^\dagger\ket{z}=e^{+i\gamma C_J(z)}\ket{z},
+\]
+with pointwise cancellation proved:
+\[
+  U_C^\dagger(z)U_C(z)=1.
+\]
+
+\section{Generating Function Objective}
+The core object is
+\[
+  G_{n}(\beta,\gamma,\lambda)
+  :=\E_J\!\left[\bra{s}U_C^\dagger U_B^\dagger e^{i\lambda C/(n+1)}U_B U_C\ket{s}\right].
+\]
+Here \(\lambda\in\R\) is a generating parameter (for later moment extraction via derivatives).
+
+\section{Derivation Pipeline in the File}
+This section tracks the theorem chain in the current Lean development.
+
+\subsection{Step 1: Insert basis resolutions}
+By expanding matrix trace and operator products in computational basis,
+\[
+  G_n = \E_J\!\left[\sum_{x,y,z}
+    \bra{s}U_C^\dagger\ket{x}
+    \bra{x}U_B^\dagger\ket{z}
+    e^{i\lambda C_J(z)/(n+1)}
+    \bra{z}U_B\ket{y}
+    \bra{y}U_C\ket{s}
+  \right].
+\]
+The file then substitutes explicit \(\ket{s}\)-entries and merges constants.
+
+\subsection{Step 2: Consolidate cost phases}
+Using diagonal form of \(U_C\), the product
+\(
+\bra{s}U_C^\dagger\ket{x}\,\bra{y}U_C\ket{s}
+\)
+becomes a single exponential with phase
+\[
+  i\gamma\,(C_J(x)-C_J(y)) + i\lambda\,\frac{C_J(z)}{n+1}.
+\]
+
+\subsection{Step 3: Swap integral and finite sums}
+A theorem assumes integrability hypotheses needed to interchange expectation integral and finite sums; the expression is rewritten as finite sums of edge-integrals.
+
+\subsection{Step 4: Pull out kernel factors}
+Since mixer kernels do not depend on \(J\), they are taken outside the \(J\)-integral.
+
+\subsection{Step 5: Spin-product variable change}
+A change of variables corresponding to multiplying spin configurations by \(z\) is performed. The phase is rewritten in explicit edge form:
+\[
+  \exp\!\left(
+    \frac{i}{\sqrt{n+1}}\sum_{j<k}J_{jk}\,\Theta_{jk}(x,y,z)
+  \right),
+\]
+then reduced to a \(z=0\)-based coefficient representation under symmetry handling.
+
+\subsection{Step 6: Edgewise symmetry and factorization assumptions}
+Under explicit assumptions in theorems:
+\begin{itemize}
+  \item edgewise sign symmetry,
+  \item edgewise factorization/independence of characteristic function contributions,
+\end{itemize}
+the expectation over \(J\) factors into edgewise characteristic functions
+\[
+  \chi_{jk}(t)=\E\big[e^{itJ_{jk}}\big].
+\]
+A notation
+\[
+  \phi_{jk}(x,y):=\gamma\,(x_jx_k-y_jy_k)
+\]
+is introduced, and the coefficient entering each edge-characteristic function is
+\[
+  a_{jk}(x,y)=\frac{1}{\sqrt{n+1}}\left(\phi_{jk}(x,y)+\frac{\lambda}{n+1}\right).
+\]
+
+\section{Gaussian Specialization}
+Assuming each edge coupling is standard normal,
+\[
+  \chi_{jk}(t)=e^{-t^2/2}.
+\]
+This yields
+\[
+  \prod_{j<k} e^{-a_{jk}^2/2}
+  = \exp\left(\sum_{j<k}-\frac{a_{jk}^2}{2}\right).
+\]
+The file then expands
+\[
+  \left(\phi_{jk}+\frac{\lambda}{n+1}\right)^2
+  = \phi_{jk}^2 + 2\frac{\lambda}{n+1}\phi_{jk} + \left(\frac{\lambda}{n+1}\right)^2.
+\]
+So exponent is split into three edge-sums.
+
+\section{Explicit Evaluation of the Constant Edge-Sum (Newest Step)}
+The third sum is independent of \((j,k)\):
+\[
+  \sum_{j<k}-\frac12\cdot\frac{1}{n+1}\left(\frac{\lambda}{n+1}\right)^2
+  = -\frac{\lambda^2}{2(n+1)^3}\,\binom{n+1}{2}
+  = -\frac{n\lambda^2}{4(n+1)^2}.
+\]
+This is now derived in Lean (not assumed), using:
+\begin{enumerate}
+  \item exact cardinality proof for \(\texttt{skEdgeSet}\),
+  \item exact identity \(\texttt{skNormFactor}(n)^2=1/(n+1)\).
+\end{enumerate}
+
+\section{Current Final Formula in the File}
+The end-of-file comment and theorem chain give:
+\begin{align*}
+\E_J\!\left[\bra{s}U_C^\dagger U_B^\dagger e^{i\lambda C/(n+1)}U_B U_C\ket{s}\right]
+&= \sum_{x,y}K_\beta^{(w)}(y)\,\overline{K_\beta^{(w)}(x)} \notag\\
+\quad\times \exp\Bigg( &
+-\frac{1}{2(n+1)} \sum_{j<k}\! \phi_{jk}(x,y)^2  \notag
+-\frac{\lambda}{(n+1)^2}\sum_{j<k}\! \phi_{jk}(x,y)
+-\frac{n\lambda^2}{4(n+1)^2}
+\Bigg),
+\end{align*}
+with
+\[
+\phi_{jk}(x,y)=\gamma(x_jx_k-y_jy_k).
+\]
+
+\section{Assumptions vs. Derived Pieces}
+\subsection*{Derived in code}
+\begin{itemize}
+  \item basis expansions and phase rewrites,
+  \item Gaussian \(\prod\exp\to\exp\sum\) and square expansion,
+  \item edge count \(|\texttt{skEdgeSet}|=n(n+1)/2\),
+  \item explicit third-term evaluation \(-n\lambda^2/[4(n+1)^2]\),
+  \item \(\texttt{skNormFactor}^2=1/(n+1)\).
+\end{itemize}
+
+\subsection*{Still assumed in theorems}
+\begin{itemize}
+  \item integrability assumption needed for exchanging expectation with finite sums,
+  \item edgewise factorization/symmetry hypotheses used before Gaussian closure,
+  \item mixer-kernel orthonormality theorem currently has a \texttt{sorry} placeholder.
+\end{itemize}
+
+\section{Practical Reading Map}
+To inspect the Lean progression in order, follow theorem names around:
+\begin{itemize}
+  \item \texttt{ExpectedGeneratingFunction\_insert\_basis\_xyz}
+  \item \texttt{ExpectedGeneratingFunction\_replace\_s\_factors}
+  \item \texttt{ExpectedGeneratingFunction\_merge}
+  \item \texttt{ExpectedGeneratingFunction\_swap\_integral\_and\_sum}
+  \item \texttt{ExpectedGeneratingFunction\_pull\_out\_kernel\_factors}
+  \item \texttt{ExpectedGeneratingFunction\_changeVariables\_xy\_spinProd}
+  \item \texttt{ExpectedGeneratingFunction\_explicit\_phase\_after\_spinProd}
+  \item \texttt{ExpectedGeneratingFunction\_edge\_indep\_and\_symm\_...}
+  \item \texttt{ExpectedGeneratingFunction\_gaussian\_edges\_...}
+  \item \texttt{ExpectedGeneratingFunction\_gaussian\_edges\_expSum\_thirdTerm\_evaluated}.
+\end{itemize}
+
+\end{document}
