@@ -442,6 +442,7 @@ noncomputable def ExpectedGeneratingFunction
 
 ----------------------------------------------------------------
 ------Evaluation of the generating function - 1st step----------
+-------Spelling out the defintion explicitly - eqn 36-----------
 ----------------------------------------------------------------
 
 /--
@@ -846,3 +847,240 @@ theorem ExpectedGeneratingFunction_pull_out_kernel_factors
                   ((lam : ℂ) *
                     ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ) := by
           simp [phase, k]
+
+
+----------------------------------------------------------------
+------Evaluation of the generating function - 2st step----------
+-------------Redefining basis variables (eqn 37)----------------
+----------------------------------------------------------------
+
+/--
+Index-level implementation of spin-product redefinition `x ↦ x*z`.
+With the `spinAt` encoding (`0 ↦ +1`, `1 ↦ -1`), this is XOR on bits.
+-/
+def spinProdIdx (n : ℕ) (x z : BasisIdx n) : BasisIdx n :=
+  ⟨x.1 ^^^ z.1, Nat.xor_lt_two_pow x.2 z.2⟩
+
+@[simp] lemma spinProdIdx_involutive (n : ℕ) (x z : BasisIdx n) :
+    spinProdIdx n (spinProdIdx n x z) z = x := by
+  apply Fin.ext
+  simp [spinProdIdx]
+
+/-- Spin-level meaning of `spinProdIdx`: `(x*z)_j = x_j z_j`. -/
+lemma spinAt_spinProdIdx (n : ℕ) (x z : BasisIdx n) (j : Fin (n + 1)) :
+    spinAt n (spinProdIdx n x z) j = spinAt n x j * spinAt n z j := by
+  by_cases hx : Nat.testBit x.1 j.1 <;> by_cases hz : Nat.testBit z.1 j.1 <;>
+    simp [spinAt, spinProdIdx, hx, hz]
+
+/--
+For fixed `z`, reindex the double sum by the spin-product substitution
+`x ↦ x*z`, `y ↦ y*z`.
+-/
+theorem sum_xy_reindex_spinProd
+    (n : ℕ) (z : BasisIdx n) (F : BasisIdx n → BasisIdx n → ℂ) :
+    (∑ x : BasisIdx n, ∑ y : BasisIdx n, F x y)
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n, F (spinProdIdx n x z) (spinProdIdx n y z) := by
+  let e : BasisIdx n ≃ BasisIdx n :=
+    { toFun := fun x => spinProdIdx n x z
+      invFun := fun x => spinProdIdx n x z
+      left_inv := by intro x; simp [spinProdIdx_involutive]
+      right_inv := by intro x; simp [spinProdIdx_involutive] }
+  have hx :
+      (∑ x : BasisIdx n, ∑ y : BasisIdx n, F x y)
+        = ∑ x : BasisIdx n, ∑ y : BasisIdx n, F (e x) y := by
+    exact Fintype.sum_equiv e (fun x => ∑ y : BasisIdx n, F x y)
+      (fun x => ∑ y : BasisIdx n, F (e x) y) (by intro x; simp [e])
+  have hy : ∀ x : BasisIdx n,
+      (∑ y : BasisIdx n, F (e x) y) = ∑ y : BasisIdx n, F (e x) (e y) := by
+    intro x
+    exact Fintype.sum_equiv e (fun y => F (e x) y) (fun y => F (e x) (e y)) (by intro y; simp [e])
+  calc
+    (∑ x : BasisIdx n, ∑ y : BasisIdx n, F x y)
+        = ∑ x : BasisIdx n, ∑ y : BasisIdx n, F (e x) y := hx
+    _ = ∑ x : BasisIdx n, ∑ y : BasisIdx n, F (e x) (e y) := by
+          refine Finset.sum_congr rfl ?_
+          intro x hx'
+          exact hy x
+    _ = ∑ x : BasisIdx n, ∑ y : BasisIdx n, F (spinProdIdx n x z) (spinProdIdx n y z) := by
+          simp [e]
+
+/--
+The generating function after the basis redefinition `x ↦ x*z`, `y ↦ y*z`:
+`E_J( ∑_{x,y,z} exp(i γ (C_J(x)-C_J(y)) + i λ C_J(z)/(n+1)) * K_{zx} * K_{zy} )`
+`=`
+`(2^(n+1))⁻¹ * E_J( ∑_{x,y,z} exp(iγ(C_J(x*z)-C_J(y*z)) + i λ C_J(z)/(n+1))*K_{z,x*z}*K_{z,y*z} )`.
+The redefinition is a bijection on the basis indices,
+so it does not change the value of the sum,
+but it allows us to express the cost differences in terms of the spin-product variables,
+which will be crucial for the next step of the evaluation.
+-/
+theorem ExpectedGeneratingFunction_changeVariables_xy_spinProd
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ((2 ^ (n + 1) : ℂ)⁻¹) *
+        (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+          (mixerKernel n β z (spinProdIdx n y z) *
+            star (mixerKernel n β z (spinProdIdx n x z))) *
+            (∫ J,
+              Complex.exp
+                ((Complex.I *
+                    ((γ : ℂ) *
+                      (((skCostOnBasis n J (spinProdIdx n x z) : ℂ) -
+                        (skCostOnBasis n J (spinProdIdx n y z) : ℂ)))) ) +
+                  (Complex.I *
+                    ((lam : ℂ) *
+                      ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ)) := by
+  rw [ExpectedGeneratingFunction_pull_out_kernel_factors n μ β γ lam hInt]
+  let c : ℂ := ((2 ^ (n + 1) : ℂ)⁻¹)
+  let G : BasisIdx n → BasisIdx n → BasisIdx n → ℂ := fun x y z =>
+    (mixerKernel n β z y * star (mixerKernel n β z x)) *
+      (∫ J,
+        Complex.exp
+          ((Complex.I *
+              ((γ : ℂ) *
+                (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+            (Complex.I *
+              ((lam : ℂ) *
+                ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ)
+  calc
+    c * (∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n, G x y z)
+        = c * (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n, G x y z) := by
+            refine congrArg (fun t => c * t) ?_
+            calc
+              (∑ x : BasisIdx n, ∑ y : BasisIdx n, ∑ z : BasisIdx n, G x y z)
+                  = (∑ x : BasisIdx n, ∑ z : BasisIdx n, ∑ y : BasisIdx n, G x y z) := by
+                      refine Finset.sum_congr rfl ?_
+                      intro x hx
+                      exact Finset.sum_comm
+              _ = (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n, G x y z) := by
+                    exact Finset.sum_comm
+    _ = c * (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+          (mixerKernel n β z (spinProdIdx n y z) *
+            star (mixerKernel n β z (spinProdIdx n x z))) *
+            (∫ J,
+              Complex.exp
+                ((Complex.I *
+                    ((γ : ℂ) *
+                      (((skCostOnBasis n J (spinProdIdx n x z) : ℂ) -
+                        (skCostOnBasis n J (spinProdIdx n y z) : ℂ)))) ) +
+                  (Complex.I *
+                    ((lam : ℂ) *
+                      ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ)) := by
+          refine congrArg (fun t => c * t) ?_
+          refine Finset.sum_congr rfl ?_
+          intro z hz
+          simpa [G] using
+            (sum_xy_reindex_spinProd n z
+              (fun x y =>
+                (mixerKernel n β z y * star (mixerKernel n β z x)) *
+                  (∫ J,
+                    Complex.exp
+                      ((Complex.I *
+                          ((γ : ℂ) *
+                            (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+                        (Complex.I *
+                          ((lam : ℂ) *
+                            ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ)))
+    _ = ((2 ^ (n + 1) : ℂ)⁻¹) *
+          (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+            (mixerKernel n β z (spinProdIdx n y z) *
+              star (mixerKernel n β z (spinProdIdx n x z))) *
+              (∫ J,
+                Complex.exp
+                  ((Complex.I *
+                      ((γ : ℂ) *
+                        (((skCostOnBasis n J (spinProdIdx n x z) : ℂ) -
+                          (skCostOnBasis n J (spinProdIdx n y z) : ℂ)))) ) +
+                    (Complex.I *
+                      ((lam : ℂ) *
+                        ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) ∂μ)) := by
+            simp [c]
+
+/--
+Explicit phase after the spin-product substitution `x ↦ x*z`, `y ↦ y*z`:
+`exp( i / √(n+1) * Σ_{j<k} J_{jk} z_j z_k [γ (x_jx_k - y_jy_k) + λ/(n+1)] )`.
+-/
+noncomputable def explicitPhaseAfterSpinProd
+    (n : ℕ) (J : SKCoupling n) (x y z : BasisIdx n) (γ lam : ℝ) : ℂ := by
+  exact Complex.exp
+    (Complex.I * ((skNormFactor n : ℂ) *
+      (Finset.sum (skEdgeSet n) (fun jk =>
+        ((J jk.1 jk.2 : ℂ) * (((spinAt n z jk.1 * spinAt n z jk.2 : ℝ) : ℂ))) *
+          (((γ : ℂ) *
+            ((((spinAt n x jk.1 * spinAt n x jk.2 : ℝ) : ℂ) -
+              (((spinAt n y jk.1 * spinAt n y jk.2 : ℝ) : ℂ)))) +
+            ((lam : ℂ) / ((n + 1 : ℕ) : ℂ))))))))
+
+/--
+Rewrite the post-change-of-variables generating function into an explicit SK edge-sum phase.
+
+This theorem starts from the Eqn-37-style spin-product reindexing
+`x ↦ x*z`, `y ↦ y*z` (already proven in
+`ExpectedGeneratingFunction_changeVariables_xy_spinProd`) and expands
+the cost terms `C_J(x*z)`, `C_J(y*z)`, `C_J(z)` using the SK definition
+`C_J(w) = (1/√(n+1)) * Σ_{j<k} J_{jk} w_j w_k`.
+
+The result is:
+
+`ExpectedGeneratingFunction`
+`= (2^(n+1))⁻¹ * Σ_{z,x,y} Kβ(z,y*z) * conj(Kβ(z,x*z)) * ∫ Φ_{xyz}(J) dμ`,
+
+where the phase inside the integral is exactly
+
+`Φ_{xyz}(J) = exp( i/√(n+1) * Σ_{j<k} J_{jk} z_j z_k`
+`                    * [ γ (x_j x_k - y_j y_k) + λ/(n+1) ] )`.
+
+In this file, that phase is packaged as `explicitPhaseAfterSpinProd`.
+-/
+theorem ExpectedGeneratingFunction_explicit_phase_after_spinProd
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ((2 ^ (n + 1) : ℂ)⁻¹) *
+        (∑ z : BasisIdx n, ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+          (mixerKernel n β z (spinProdIdx n y z) *
+            star (mixerKernel n β z (spinProdIdx n x z))) *
+            (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)) := by
+  rw [ExpectedGeneratingFunction_changeVariables_xy_spinProd n μ β γ lam hInt]
+  apply congrArg (fun t => ((2 ^ (n + 1) : ℂ)⁻¹) * t)
+  refine Finset.sum_congr rfl ?_
+  intro z hz
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  refine MeasureTheory.integral_congr_ae ?_
+  refine Filter.Eventually.of_forall ?_
+  intro J
+  simp [explicitPhaseAfterSpinProd, skCostOnBasis, skNormFactor, spinAt_spinProdIdx, mul_add,
+    mul_assoc, mul_comm, mul_left_comm, sub_eq_add_neg,
+    Finset.sum_add_distrib, Finset.mul_sum]
+  congr 1
+  simp [div_eq_mul_inv, Finset.mul_sum, mul_assoc, mul_comm, mul_left_comm]
