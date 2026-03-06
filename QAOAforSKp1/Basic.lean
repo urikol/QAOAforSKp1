@@ -324,6 +324,97 @@ def skEdgeSet (n : ℕ) : Finset (Fin (n + 1) × Fin (n + 1)) :=
 noncomputable def skNormFactor (n : ℕ) : ℝ :=
   (Real.sqrt ((n + 1 : ℕ) : ℝ))⁻¹
 
+/--
+Equivalence between strict index pairs `{(j,k) | j < k}` and
+`Σ k : Fin (n+1), Fin k`.
+This is used to derive the exact edge count in `skEdgeSet`.
+-/
+def pairLtEquivSigma (n : ℕ) :
+    {jk : Fin (n + 1) × Fin (n + 1) // jk.1.1 < jk.2.1} ≃
+      Sigma (fun k : Fin (n + 1) => Fin k.1) where
+  toFun x := ⟨x.1.2, ⟨x.1.1.1, x.2⟩⟩
+  invFun p := ⟨(⟨p.2.1, lt_trans p.2.2 p.1.2⟩, p.1), p.2.2⟩
+  left_inv := by
+    intro x
+    rcases x with ⟨⟨j, k⟩, hjk⟩
+    rfl
+  right_inv := by
+    intro p
+    rcases p with ⟨k, j⟩
+    rfl
+
+/-- Exact cardinality of the SK edge set `{(j,k) | j < k}`. -/
+lemma skEdgeSet_card (n : ℕ) : (skEdgeSet n).card = n * (n + 1) / 2 := by
+  have hsum : (∑ k : Fin (n + 1), k.1) = Finset.sum (Finset.range (n + 1)) (fun i => i) := by
+    simpa using (Fin.sum_univ_eq_sum_range (f := fun i : ℕ => i) (n := n + 1))
+  have hcardSub :
+      Fintype.card {jk : Fin (n + 1) × Fin (n + 1) // jk.1.1 < jk.2.1} = n * (n + 1) / 2 := by
+    calc
+      Fintype.card {jk : Fin (n + 1) × Fin (n + 1) // jk.1.1 < jk.2.1}
+          = Fintype.card (Sigma (fun k : Fin (n + 1) => Fin k.1)) := by
+            exact Fintype.card_congr (pairLtEquivSigma n)
+      _ = ∑ k : Fin (n + 1), Fintype.card (Fin k.1) := by simp [Fintype.card_sigma]
+      _ = ∑ k : Fin (n + 1), k.1 := by simp
+      _ = Finset.sum (Finset.range (n + 1)) (fun i => i) := hsum
+      _ = n * (n + 1) / 2 := by
+            simpa [Nat.mul_comm] using (Finset.sum_range_id (n + 1))
+  have hcardSubtype :
+      Fintype.card {jk : Fin (n + 1) × Fin (n + 1) // jk.1.1 < jk.2.1}
+        =
+          ({jk : Fin (n + 1) × Fin (n + 1) | jk.1.1 < jk.2.1} :
+            Finset (Fin (n + 1) × Fin (n + 1))).card := by
+    simpa using (Fintype.card_subtype (fun jk : Fin (n + 1) × Fin (n + 1) => jk.1.1 < jk.2.1))
+  have hcardFinset :
+      ({jk : Fin (n + 1) × Fin (n + 1) | jk.1.1 < jk.2.1} : Finset (Fin (n + 1) × Fin (n + 1))).card
+        = n * (n + 1) / 2 := by
+    exact hcardSubtype.symm.trans hcardSub
+  simpa [skEdgeSet] using hcardFinset
+
+/-- `skNormFactor^2 = 1/(n+1)`. -/
+lemma skNormFactor_sq (n : ℕ) : (skNormFactor n) ^ 2 = ((n + 1 : ℝ))⁻¹ := by
+  unfold skNormFactor
+  let m : ℝ := ((n + 1 : ℕ) : ℝ)
+  have hm0 : 0 ≤ m := by
+    dsimp [m]
+    positivity
+  calc
+    (Real.sqrt m)⁻¹ ^ 2 = ((Real.sqrt m) ^ 2)⁻¹ := by ring
+    _ = m⁻¹ := by simp [Real.sq_sqrt hm0]
+    _ = ((n + 1 : ℝ))⁻¹ := by simp [m]
+
+/--
+Closed form of the `j<k`-independent Gaussian term:
+`∑_{j<k} [-(1/2) * skNormFactor^2 * (λ/(n+1))^2]
+ = - n λ^2 / (4 (n+1)^2)` (in `ℂ` after casting).
+-/
+lemma gaussian_constant_edge_sum_closed_form (n : ℕ) (lam : ℝ) :
+    Finset.sum (skEdgeSet n) (fun _ =>
+      (-((((skNormFactor n) ^ 2 * ((lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2))
+      = -((n : ℂ) * (lam : ℂ) ^ 2 / (4 * ((n + 1 : ℂ) ^ 2))) := by
+  have hdiv : 2 ∣ n * (n + 1) := by
+    rcases Nat.even_mul_succ_self n with ⟨k, hk⟩
+    exact ⟨k, by simpa [two_mul, add_comm, add_left_comm, add_assoc] using hk⟩
+  have h2C : ((2 : ℕ) : ℂ) ≠ 0 := by norm_num
+  have hcastDivC : ((n * (n + 1) / 2 : ℕ) : ℂ) = (n : ℂ) * (n + 1 : ℂ) / 2 := by
+    rw [Nat.cast_div hdiv h2C]
+    norm_num
+  have hcard : ((skEdgeSet n).card : ℂ) = (n : ℂ) * (n + 1 : ℂ) / 2 := by
+    rw [skEdgeSet_card]
+    exact hcastDivC
+  calc
+    Finset.sum (skEdgeSet n) (fun _ =>
+      (-((((skNormFactor n) ^ 2 * ((lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2))
+        = ((skEdgeSet n).card : ℂ) *
+            (-((((skNormFactor n) ^ 2 * ((lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2) := by simp
+    _ = ((n : ℂ) * (n + 1 : ℂ) / 2) *
+          (-((((skNormFactor n) ^ 2 * ((lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2) := by simp [hcard]
+    _ = -((n : ℂ) * (lam : ℂ) ^ 2 / (4 * ((n + 1 : ℂ) ^ 2))) := by
+          simp [skNormFactor_sq]
+          have hn1 : (n + 1 : ℂ) ≠ 0 := by
+            exact_mod_cast (Nat.succ_ne_zero n)
+          field_simp [hn1]
+          ring
+
 /-- SK cost value `C_J(z)` on computational basis state `z`. -/
 noncomputable def skCostOnBasis (n : ℕ) (J : SKCoupling n) (z : BasisIdx n) : ℝ :=
   skNormFactor n *
@@ -1503,10 +1594,309 @@ theorem ExpectedGeneratingFunction_edge_indep_and_symm_simplified_with_phi_facto
 
 -- Current status (Step 4):
 -- ExpectedGeneratingFunction is reduced to an x,y sum with edgewise factorization:
---   Σ_{x,y} Kβ_w(y) * conj(Kβ_w(x)) * Π_{j<k} χ_{jk}(a_{jk}(x,y)).
+--   Σ_{x,y} Kβ_w(y) * conj(Kβ_w(x)) * Π _{j<k} χ_{jk}(a_{jk}(x,y)).
+-- with
+--   a_{jk}(x,y) = (1 / √(n+1)) * (φ_{jk} + λ/(n+1))
+--               = edgeCoeffAfterSpinProd_z0 n x y γ lam jk.
 -- Here:
 --   Kβ_w    := mixerKernelByWeight
 --   φ_{jk}  := phiEdge = γ (x_j x_k - y_j y_k)
 --   χ_{jk}  := edgeChar (edge marginal characteristic function)
 -- Final theorem:
 --   ExpectedGeneratingFunction_edge_indep_and_symm_simplified_with_phi_factored
+
+----------------------------------------------------------------
+------Evaluation of the generating function - 5st step----------
+-------------Gaussian couplings: explicit χ --------------------
+----------------------------------------------------------------
+
+/--
+If each edge coupling is standard normal, then
+`χ_{jk}(t) = exp(-t^2/2)`.
+This theorem substitutes that identity into the factored formula.
+-/
+theorem ExpectedGeneratingFunction_gaussian_edges_closed_form
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t))
+    (hGaussChar : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = Complex.exp (-(t : ℂ) ^ 2 / 2)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          (Finset.prod (skEdgeSet n) (fun jk =>
+            Complex.exp (-(edgeCoeffAfterSpinProd_z0 n x y γ lam jk : ℂ) ^ 2 / 2))) := by
+  rw [ExpectedGeneratingFunction_edge_indep_and_symm_simplified_with_phi_factored
+        n μ β γ lam hInt hFactor hEven]
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  refine Finset.prod_congr rfl ?_
+  intro jk hjk
+  simpa using hGaussChar jk (edgeCoeffAfterSpinProd_z0 n x y γ lam jk)
+
+/--
+Gaussian step rewritten as `∏ exp = exp(∑ ...)`, with explicit unpacking of
+`a_{jk} = edgeCoeffAfterSpinProd_z0`.
+-/
+theorem ExpectedGeneratingFunction_gaussian_edges_expSum_unpacked
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t))
+    (hGaussChar : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = Complex.exp (-(t : ℂ) ^ 2 / 2)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          Complex.exp
+            (Finset.sum (skEdgeSet n) (fun jk =>
+              (-((
+                  (skNormFactor n *
+                    (phiEdge n x y γ jk + lam / (n + 1 : ℝ)) : ℝ) : ℂ) ^ 2) / 2))) := by
+  rw [ExpectedGeneratingFunction_gaussian_edges_closed_form
+        n μ β γ lam hInt hFactor hEven hGaussChar]
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  calc
+    Finset.prod (skEdgeSet n) (fun jk =>
+      Complex.exp (-(edgeCoeffAfterSpinProd_z0 n x y γ lam jk : ℂ) ^ 2 / 2))
+        = Complex.exp
+            (Finset.sum (skEdgeSet n) (fun jk =>
+              (-(edgeCoeffAfterSpinProd_z0 n x y γ lam jk : ℂ) ^ 2) / 2)) := by
+                simpa using
+                  (Complex.exp_sum (skEdgeSet n)
+                    (fun jk => (-(edgeCoeffAfterSpinProd_z0 n x y γ lam jk : ℂ) ^ 2) / 2)).symm
+    _ = Complex.exp
+          (Finset.sum (skEdgeSet n) (fun jk =>
+            (-((
+                (skNormFactor n *
+                  (phiEdge n x y γ jk + lam / (n + 1 : ℝ)) : ℝ) : ℂ) ^ 2) / 2))) := by
+          simp [edgeCoeffAfterSpinProd_z0, phiEdge]
+
+/--
+Expand `(φ_{jk} + λ/(n+1))^2` in the Gaussian exponent:
+`(a+b)^2 = a^2 + 2ab + b^2`.
+-/
+theorem ExpectedGeneratingFunction_gaussian_edges_expSum_squareExpanded
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t))
+    (hGaussChar : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = Complex.exp (-(t : ℂ) ^ 2 / 2)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          Complex.exp
+            (Finset.sum (skEdgeSet n) (fun jk =>
+              (-((((skNormFactor n) ^ 2 *
+                  ((phiEdge n x y γ jk) ^ 2 +
+                    2 * (lam / (n + 1 : ℝ)) * (phiEdge n x y γ jk) +
+                    (lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2))) := by
+  rw [ExpectedGeneratingFunction_gaussian_edges_expSum_unpacked
+        n μ β γ lam hInt hFactor hEven hGaussChar]
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  apply congrArg Complex.exp
+  refine Finset.sum_congr rfl ?_
+  intro jk hjk
+  let a : ℝ := skNormFactor n
+  let b : ℝ := phiEdge n x y γ jk
+  let c : ℝ := lam / (n + 1 : ℝ)
+  simp
+  ring_nf
+
+/--
+Split the Gaussian exponent edge-sum into three separate edge-sums,
+corresponding to `φ^2`, `2(λ/(n+1))φ`, and `(λ/(n+1))^2`.
+-/
+theorem ExpectedGeneratingFunction_gaussian_edges_expSum_split_three_sums
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t))
+    (hGaussChar : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = Complex.exp (-(t : ℂ) ^ 2 / 2)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          Complex.exp
+            ( (Finset.sum (skEdgeSet n) (fun jk =>
+                (-((((skNormFactor n) ^ 2 * ((phiEdge n x y γ jk) ^ 2) : ℝ) : ℂ)) / 2)))
+            + (Finset.sum (skEdgeSet n) (fun jk =>
+                (-((((skNormFactor n) ^ 2 *
+                    (2 * (lam / (n + 1 : ℝ)) * (phiEdge n x y γ jk)) : ℝ) : ℂ)) / 2)))
+            + (Finset.sum (skEdgeSet n) (fun _ =>
+                (-((((skNormFactor n) ^ 2 * ((lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2))) ) := by
+  rw [ExpectedGeneratingFunction_gaussian_edges_expSum_squareExpanded
+        n μ β γ lam hInt hFactor hEven hGaussChar]
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  apply congrArg Complex.exp
+  calc
+    Finset.sum (skEdgeSet n) (fun jk =>
+      (-((((skNormFactor n) ^ 2 *
+          ((phiEdge n x y γ jk) ^ 2 +
+            2 * (lam / (n + 1 : ℝ)) * (phiEdge n x y γ jk) +
+            (lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2))
+      =
+      Finset.sum (skEdgeSet n) (fun jk =>
+        (-((((skNormFactor n) ^ 2 * ((phiEdge n x y γ jk) ^ 2) : ℝ) : ℂ)) / 2) +
+        (-((((skNormFactor n) ^ 2 *
+            (2 * (lam / (n + 1 : ℝ)) * (phiEdge n x y γ jk)) : ℝ) : ℂ)) / 2) +
+        (-((((skNormFactor n) ^ 2 * ((lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2)) := by
+          refine Finset.sum_congr rfl ?_
+          intro jk hjk
+          push_cast
+          ring_nf
+    _ =
+      (Finset.sum (skEdgeSet n) (fun jk =>
+        (-((((skNormFactor n) ^ 2 * ((phiEdge n x y γ jk) ^ 2) : ℝ) : ℂ)) / 2)))
+      +
+      (Finset.sum (skEdgeSet n) (fun jk =>
+        (-((((skNormFactor n) ^ 2 *
+            (2 * (lam / (n + 1 : ℝ)) * (phiEdge n x y γ jk)) : ℝ) : ℂ)) / 2)))
+      +
+      (Finset.sum (skEdgeSet n) (fun jk =>
+        (-((((skNormFactor n) ^ 2 * ((lam / (n + 1 : ℝ)) ^ 2) : ℝ) : ℂ)) / 2))) := by
+          simp [Finset.sum_add_distrib, add_assoc]
+
+/--
+Evaluate the third (constant-in-`jk`) Gaussian edge-sum explicitly:
+it contributes `- n λ^2 / (4 (n+1)^2)` in the exponent.
+-/
+theorem ExpectedGeneratingFunction_gaussian_edges_expSum_thirdTerm_evaluated
+    (n : ℕ) (μ : MeasureTheory.Measure (SKCoupling n)) (β γ lam : ℝ)
+    (hInt : ∀ x y z : BasisIdx n,
+      MeasureTheory.Integrable
+        (fun J : SKCoupling n =>
+          Complex.exp
+            ((Complex.I *
+                ((γ : ℂ) *
+                  (((skCostOnBasis n J x : ℂ) - (skCostOnBasis n J y : ℂ)))) ) +
+              (Complex.I *
+                ((lam : ℂ) *
+                  ((skCostOnBasis n J z / (n + 1 : ℝ)) : ℂ)))) *
+          mixerKernel n β z y *
+          star (mixerKernel n β z x)) μ)
+    (hFactor : ∀ x y z : BasisIdx n,
+      (∫ J, explicitPhaseAfterSpinProd n J x y z γ lam ∂μ)
+        = Finset.prod (skEdgeSet n) (fun jk =>
+            edgeChar n μ jk (edgeCoeffAfterSpinProd n x y z γ lam jk)))
+    (hEven : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = edgeChar n μ jk (-t))
+    (hGaussChar : ∀ jk : Fin (n + 1) × Fin (n + 1), ∀ t : ℝ,
+      edgeChar n μ jk t = Complex.exp (-(t : ℂ) ^ 2 / 2)) :
+    ExpectedGeneratingFunction n μ β γ lam
+      =
+      ∑ x : BasisIdx n, ∑ y : BasisIdx n,
+        (mixerKernelByWeight n β y * star (mixerKernelByWeight n β x)) *
+          Complex.exp
+            ( (Finset.sum (skEdgeSet n) (fun jk =>
+                (-((((skNormFactor n) ^ 2 * ((phiEdge n x y γ jk) ^ 2) : ℝ) : ℂ)) / 2)))
+            + (Finset.sum (skEdgeSet n) (fun jk =>
+                (-((((skNormFactor n) ^ 2 *
+                    (2 * (lam / (n + 1 : ℝ)) * (phiEdge n x y γ jk)) : ℝ) : ℂ)) / 2)))
+            + (-((n : ℂ) * (lam : ℂ) ^ 2 / (4 * ((n + 1 : ℂ) ^ 2))) ) ) := by
+  rw [ExpectedGeneratingFunction_gaussian_edges_expSum_split_three_sums
+        n μ β γ lam hInt hFactor hEven hGaussChar]
+  refine Finset.sum_congr rfl ?_
+  intro x hx
+  refine Finset.sum_congr rfl ?_
+  intro y hy
+  congr 1
+  apply congrArg Complex.exp
+  congr 2
+  exact gaussian_constant_edge_sum_closed_form n lam
+
+/-
+Final formula status (Gaussian edge couplings):
+
+E_J[⟨s| U_C† U_B† exp(i λ C/(n+1)) U_B U_C |s⟩]
+  = ∑_{x,y} Kβ_w(y) * conj(Kβ_w(x)) *
+      exp(
+        ∑_{j<k} (-(1 / (2*(n+1))) * φ_{jk}(x,y)^2)
+        + ∑_{j<k} (-(λ / (n+1)^2) * φ_{jk}(x,y))
+        - n * λ^2 / (4 * (n+1)^2)
+      ).
+
+Here:
+  φ_{jk}(x,y) = γ * (x_j x_k - y_j y_k).
+-/
